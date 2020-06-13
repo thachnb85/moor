@@ -235,7 +235,7 @@ void main() {
         'GROUP BY c.id HAVING COUNT(t.id) >= ?;',
         [10]));
 
-    expect(result.readTable(todos), isNull);
+    expect(() => result.readTable(todos), throwsA(isA<NotInResultSetError>()));
     expect(
       result.readTable(categories),
       Category(
@@ -314,5 +314,33 @@ void main() {
     }
 
     expect(wrappedException.toString(), contains('possible cause'));
+  });
+
+  group("throws when reading results that don't exist", () {
+    test('readTable', () async {
+      when(executor.runSelect(any, any)).thenAnswer((_) {
+        return Future.value([{}]);
+      });
+
+      final todos = db.alias(db.todosTable, 't');
+      final categories = db.alias(db.categories, 'c');
+
+      final query = db.select(todos).join([
+        leftOuterJoin(categories, categories.id.equalsExp(todos.category))
+      ]).map((row) => row.readTable(db.users));
+
+      expect(query.get(), throwsA(isA<NotInResultSetError>()));
+    });
+
+    test('read', () async {
+      when(executor.runSelect(any, any)).thenAnswer((_) {
+        return Future.value([{}]);
+      });
+
+      final query = (db.selectOnly(db.users)..addColumns([db.users.name]))
+          .map((row) => row.read(db.users.id));
+
+      expect(query.get(), throwsA(isA<NotInResultSetError>()));
+    });
   });
 }

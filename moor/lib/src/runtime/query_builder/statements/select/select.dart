@@ -126,7 +126,11 @@ String _beginOfSelect(bool distinct) {
 /// multiple entities.
 class TypedResult {
   /// Creates the result from the parsed table data.
-  TypedResult(this._parsedData, this.rawData, [this._parsedExpressions]);
+  TypedResult(
+    this._parsedData,
+    this.rawData, [
+    this._parsedExpressions = const {},
+  ]);
 
   final Map<TableInfo, dynamic> _parsedData;
   final Map<Expression, dynamic> _parsedExpressions;
@@ -136,6 +140,14 @@ class TypedResult {
 
   /// Reads all data that belongs to the given [table] from this row.
   D readTable<T extends Table, D extends DataClass>(TableInfo<T, D> table) {
+    if (!_parsedData.containsKey(table)) {
+      throw NotInResultSetError._(
+        'This result set does not contain a full row for ${table.tableName}. \n'
+        "Please make sure that you're including the table in the select() "
+        'function or a join clause.',
+      );
+    }
+
     return _parsedData[table] as D;
   }
 
@@ -143,10 +155,28 @@ class TypedResult {
   /// as a column, for instance via [JoinedSelectStatement.addColumns].
   ///
   /// To access the underlying columns directly, use
-  D read<D, T extends SqlType<D>>(Expression<D> expr) {
-    if (_parsedExpressions != null) {
-      return _parsedExpressions[expr] as D;
+  D read<D>(Expression<D> expr) {
+    if (!_parsedExpressions.containsKey(expr)) {
+      throw NotInResultSetError._(
+        'The requested expression is not included in this result set, so it '
+        "can't be returned here. \n"
+        'Please make sure that the expression was added via addColumns(). '
+        "If you're receiving this error after a hot-reload, try extracting the"
+        'affected expression to a local variable.',
+      );
     }
-    return null;
+
+    return _parsedExpressions[expr] as D;
   }
+}
+
+/// This error is thrown by [TypedResult.readTable] or [TypedResult.read] when
+/// attempting to read a column or table that is not present in the result.
+class NotInResultSetError extends Error {
+  final String _message;
+
+  NotInResultSetError._(this._message);
+
+  @override
+  String toString() => _message;
 }
