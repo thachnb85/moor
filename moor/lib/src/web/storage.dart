@@ -218,3 +218,25 @@ class _IndexedDbStorage implements MoorWebStorage {
     return reader.result as Uint8List;
   }
 }
+
+class InMemoryWebStorage implements MoorWebStorage {
+  Uint8List? _storedData;
+
+  InMemoryWebStorage();
+
+  @override
+  Future<void> close() => Future.value();
+
+  @override
+  Future<void> open() => Future.value();
+
+  @override
+  Future<Uint8List?> restore() => Future.value(_storedData);
+
+  @override
+  Future<void> store(Uint8List data) {
+    _storedData = data;
+    return Future.value();
+  }
+}
+
