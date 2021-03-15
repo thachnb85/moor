@@ -224,7 +224,7 @@ class InMemoryWebStorage implements MoorWebStorage {
 
   InMemoryWebStorage({Uint8List inputData}){
     _storedData = inputData;
-  };
+  }
 
   @override
   Future<void> close() => Future.value();
