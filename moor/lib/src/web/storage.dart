@@ -222,7 +222,9 @@ class _IndexedDbStorage implements MoorWebStorage {
 class InMemoryWebStorage implements MoorWebStorage {
   Uint8List? _storedData;
 
-  InMemoryWebStorage();
+  InMemoryWebStorage({Uint8List inputData}){
+    _storedData = inputData;
+  };
 
   @override
   Future<void> close() => Future.value();
