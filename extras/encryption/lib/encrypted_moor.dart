@@ -6,9 +6,10 @@ library encrypted_moor;
 
 import 'dart:async';
 import 'dart:io';
-import 'package:path/path.dart';
-import 'package:moor/moor.dart';
+
 import 'package:moor/backends.dart';
+import 'package:moor/moor.dart';
+import 'package:path/path.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart' as s;
 
 /// Signature of a function that runs when a database doesn't exist on file.
@@ -37,6 +38,7 @@ class _SqfliteDelegate extends DatabaseDelegate with _SqfliteExecutor {
   });
 
   DbVersionDelegate? _delegate;
+
   @override
   DbVersionDelegate get versionDelegate {
     return _delegate ??= _SqfliteVersionDelegate(db);
@@ -219,4 +221,11 @@ class EncryptedExecutor extends DelegatedDatabase {
     final sqfliteDelegate = delegate as _SqfliteDelegate;
     return sqfliteDelegate.isOpen ? sqfliteDelegate.db : null;
   }
+
+  @override
+  // We're not really required to be sequential since sqflite has an internal
+  // lock to bring statements into a sequential order.
+  // Setting isSequential here helps with moor cancellations in stream queries
+  // though.
+  bool get isSequential => true;
 }

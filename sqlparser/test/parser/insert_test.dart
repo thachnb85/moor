@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:sqlparser/sqlparser.dart';
+import 'package:test/test.dart';
 
 import 'utils.dart';
 
@@ -9,7 +9,7 @@ void main() {
       'INSERT OR REPLACE INTO tbl (a, b, c) VALUES (d, e, f)',
       InsertStatement(
         mode: InsertMode.insertOrReplace,
-        table: TableReference('tbl', null),
+        table: TableReference('tbl'),
         targetColumns: [
           Reference(columnName: 'a'),
           Reference(columnName: 'b'),
@@ -31,7 +31,7 @@ void main() {
       'INSERT INTO tbl DEFAULT VALUES',
       InsertStatement(
         mode: InsertMode.insert,
-        table: TableReference('tbl', null),
+        table: TableReference('tbl'),
         targetColumns: const [],
         source: DefaultValues(),
       ),
@@ -43,12 +43,12 @@ void main() {
       'REPLACE INTO tbl SELECT * FROM tbl',
       InsertStatement(
         mode: InsertMode.replace,
-        table: TableReference('tbl', null),
+        table: TableReference('tbl'),
         targetColumns: const [],
         source: SelectInsertSource(
           SelectStatement(
             columns: [StarResultColumn(null)],
-            from: TableReference('tbl', null),
+            from: TableReference('tbl'),
           ),
         ),
       ),
@@ -64,7 +64,7 @@ void main() {
           table: TableReference('tbl'),
           targetColumns: const [],
           source: DefaultValues(),
-          upsert: UpsertClause(action: DoNothing()),
+          upsert: UpsertClause([UpsertClauseEntry(action: DoNothing())]),
         ),
       );
     });
@@ -77,14 +77,18 @@ void main() {
           targetColumns: const [],
           source: DefaultValues(),
           upsert: UpsertClause(
-            onColumns: [
-              IndexedColumn(Reference(columnName: 'foo')),
-              IndexedColumn(
-                Reference(columnName: 'bar'),
-                OrderingMode.descending,
+            [
+              UpsertClauseEntry(
+                onColumns: [
+                  IndexedColumn(Reference(columnName: 'foo')),
+                  IndexedColumn(
+                    Reference(columnName: 'bar'),
+                    OrderingMode.descending,
+                  ),
+                ],
+                action: DoNothing(),
               ),
             ],
-            action: DoNothing(),
           ),
         ),
       );
@@ -98,16 +102,20 @@ void main() {
           targetColumns: const [],
           source: DefaultValues(),
           upsert: UpsertClause(
-            onColumns: [
-              IndexedColumn(Reference(columnName: 'foo')),
-              IndexedColumn(Reference(columnName: 'bar')),
+            [
+              UpsertClauseEntry(
+                onColumns: [
+                  IndexedColumn(Reference(columnName: 'foo')),
+                  IndexedColumn(Reference(columnName: 'bar')),
+                ],
+                where: BinaryExpression(
+                  NumericLiteral(2, token(TokenType.numberLiteral)),
+                  token(TokenType.equal),
+                  Reference(columnName: 'foo'),
+                ),
+                action: DoNothing(),
+              ),
             ],
-            where: BinaryExpression(
-              NumericLiteral(2, token(TokenType.numberLiteral)),
-              token(TokenType.equal),
-              Reference(columnName: 'foo'),
-            ),
-            action: DoNothing(),
           ),
         ),
       );
@@ -121,14 +129,19 @@ void main() {
           targetColumns: const [],
           source: DefaultValues(),
           upsert: UpsertClause(
-            action: DoUpdate(
-              [
-                SetComponent(
-                  column: Reference(columnName: 'foo'),
-                  expression: NumericLiteral(2, token(TokenType.numberLiteral)),
+            [
+              UpsertClauseEntry(
+                action: DoUpdate(
+                  [
+                    SetComponent(
+                      column: Reference(columnName: 'foo'),
+                      expression:
+                          NumericLiteral(2, token(TokenType.numberLiteral)),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       );
@@ -142,20 +155,74 @@ void main() {
           targetColumns: const [],
           source: DefaultValues(),
           upsert: UpsertClause(
-            action: DoUpdate(
-              [
-                SetComponent(
-                  column: Reference(columnName: 'foo'),
-                  expression: NumericLiteral(2, token(TokenType.numberLiteral)),
+            [
+              UpsertClauseEntry(
+                action: DoUpdate(
+                  [
+                    SetComponent(
+                      column: Reference(columnName: 'foo'),
+                      expression:
+                          NumericLiteral(2, token(TokenType.numberLiteral)),
+                    ),
+                  ],
+                  where: NumberedVariable(
+                    QuestionMarkVariableToken(fakeSpan('?'), null),
+                  ),
                 ),
-              ],
-              where: NumberedVariable(
-                QuestionMarkVariableToken(fakeSpan('?'), null),
               ),
-            ),
+            ],
           ),
         ),
       );
     });
+
+    test('having more than one clause', () {
+      testStatement(
+        '$prefix (foo) DO NOTHING ON CONFLICT (bar) DO UPDATE SET x = 2',
+        InsertStatement(
+          table: TableReference('tbl'),
+          targetColumns: const [],
+          source: DefaultValues(),
+          upsert: UpsertClause(
+            [
+              UpsertClauseEntry(
+                onColumns: [IndexedColumn(Reference(columnName: 'foo'))],
+                action: DoNothing(),
+              ),
+              UpsertClauseEntry(
+                onColumns: [IndexedColumn(Reference(columnName: 'bar'))],
+                action: DoUpdate(
+                  [
+                    SetComponent(
+                      column: Reference(columnName: 'x'),
+                      expression:
+                          NumericLiteral(2, token(TokenType.numberLiteral)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    });
+  });
+
+  test('parses RETURNING clause', () {
+    testStatement(
+      'INSERT INTO tbl DEFAULT VALUES RETURNING foo, 3, bar;',
+      InsertStatement(
+        table: TableReference('tbl'),
+        targetColumns: const [],
+        source: DefaultValues(),
+        returning: Returning([
+          ExpressionResultColumn(expression: Reference(columnName: 'foo')),
+          ExpressionResultColumn(
+            expression: NumericLiteral(3, token(TokenType.numberLiteral)),
+          ),
+          ExpressionResultColumn(expression: Reference(columnName: 'bar')),
+        ]),
+      ),
+    );
   });
 }

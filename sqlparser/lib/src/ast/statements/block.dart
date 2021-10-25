@@ -1,10 +1,13 @@
-part of '../ast.dart';
+import '../../reader/tokenizer/token.dart';
+import '../node.dart';
+import '../visitor.dart';
+import 'statement.dart';
 
 /// BLOCK = 'BEGIN' < CRUD-STATEMENT ';' > 'END'
 class Block extends AstNode {
   Token? begin;
   Token? end;
-  final List<CrudStatement> statements;
+  List<CrudStatement> statements;
 
   Block(this.statements);
 
@@ -15,7 +18,7 @@ class Block extends AstNode {
 
   @override
   void transformChildren<A>(Transformer<A> transformer, A arg) {
-    transformer.transformChildren(statements, this, arg);
+    statements = transformer.transformChildren(statements, this, arg);
   }
 
   @override

@@ -1,5 +1,5 @@
 import 'package:sqlparser/sqlparser.dart';
-import 'package:sqlparser/src/reader/parser/parser.dart';
+import 'package:sqlparser/src/reader/parser.dart';
 import 'package:sqlparser/src/reader/tokenizer/scanner.dart';
 import 'package:sqlparser/src/utils/ast_equality.dart';
 import 'package:test/test.dart';
@@ -16,7 +16,7 @@ void main() {
         DeclaredStatement(
           SimpleName('a'),
           UpdateStatement(
-            table: TableReference('tbl', null),
+            table: TableReference('tbl'),
             set: [
               SetComponent(
                 column: Reference(columnName: 'a'),
@@ -29,7 +29,7 @@ void main() {
           SimpleName('b'),
           SelectStatement(
             columns: [StarResultColumn(null)],
-            from: TableReference('tbl', null),
+            from: TableReference('tbl'),
           ),
         ),
       ]),
@@ -48,7 +48,7 @@ void main() {
         SimpleName('b'),
         SelectStatement(
           columns: [StarResultColumn(null)],
-          from: TableReference('tbl', null),
+          from: TableReference('tbl'),
         ),
       ),
     );
@@ -78,7 +78,7 @@ void main() {
         SimpleName('query'),
         SelectStatement(
           columns: [StarResultColumn(null)],
-          from: TableReference('tbl', null),
+          from: TableReference('tbl'),
         ),
       ),
     );

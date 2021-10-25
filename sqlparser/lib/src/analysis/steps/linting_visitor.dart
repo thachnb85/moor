@@ -6,11 +6,44 @@ class LintingVisitor extends RecursiveVisitor<void, void> {
   final EngineOptions options;
   final AnalysisContext context;
 
+  bool _isTopLevelStatement = true;
+
   LintingVisitor(this.options, this.context);
 
   @override
+  void visitCommonTableExpression(CommonTableExpression e, void arg) {
+    if (e.materializationHint != null &&
+        options.version < SqliteVersion.v3_35) {
+      context.reportError(AnalysisError(
+        type: AnalysisErrorType.notSupportedInDesiredVersion,
+        message: 'MATERIALIZED / NOT MATERIALIZED requires sqlite3 version 35',
+        relevantNode: e.materialized ?? e,
+      ));
+    }
+
+    visitChildren(e, arg);
+  }
+
+  @override
   void visitCreateTableStatement(CreateTableStatement e, void arg) {
+    final schemaReader =
+        SchemaFromCreateTable(moorExtensions: options.useMoorExtensions);
     var hasPrimaryKeyDeclaration = false;
+    var isStrict = false;
+
+    if (e.isStrict) {
+      if (options.version < SqliteVersion.v3_37) {
+        context.reportError(AnalysisError(
+          type: AnalysisErrorType.notSupportedInDesiredVersion,
+          message: 'STRICT tables are only supported from sqlite3 version 37',
+          relevantNode: e.strict ?? e,
+        ));
+      } else {
+        // only report warnings related to STRICT tables if strict tables are
+        // supported.
+        isStrict = true;
+      }
+    }
 
     // Ensure that a table declaration only has one PRIMARY KEY constraint
     void handlePrimaryKeyNode(AstNode node) {
@@ -25,9 +58,40 @@ class LintingVisitor extends RecursiveVisitor<void, void> {
     }
 
     for (final column in e.columns) {
+      if (isStrict) {
+        final typeName = column.typeName;
+
+        if (typeName == null) {
+          // Columns in strict tables must have a type name, even if it's
+          // `ANY`.
+          context.reportError(AnalysisError(
+            type: AnalysisErrorType.noTypeNameInStrictTable,
+            message: 'In `STRICT` tables, columns must have a type name!',
+            relevantNode: column.nameToken ?? column,
+          ));
+        } else if (!schemaReader.isValidTypeNameForStrictTable(typeName)) {
+          context.reportError(AnalysisError(
+            type: AnalysisErrorType.invalidTypeNameInStrictTable,
+            message: 'Invalid type name for a `STRICT` table.',
+            relevantNode: column.typeNames?.toSingleEntity ?? column,
+          ));
+        }
+      }
+
       for (final constraint in column.constraints) {
         if (constraint is PrimaryKeyColumn) {
           handlePrimaryKeyNode(constraint);
+
+          // A primary key in a STRICT table must be annoted with "NOT NULL"
+          if (isStrict && !column.isNonNullable) {
+            context.reportError(AnalysisError(
+              type: AnalysisErrorType.nullableColumnInStrictPrimaryKey,
+              message:
+                  'The column is used as a `PRIMARY KEY` in a `STRICT` table, '
+                  'which means that is must be marked as `NOT NULL`',
+              relevantNode: constraint,
+            ));
+          }
         }
       }
     }
@@ -35,7 +99,38 @@ class LintingVisitor extends RecursiveVisitor<void, void> {
     for (final constraint in e.tableConstraints) {
       if (constraint is KeyClause && constraint.isPrimaryKey) {
         handlePrimaryKeyNode(constraint);
+
+        if (isStrict) {
+          for (final columnName in constraint.columns) {
+            final expr = columnName.expression;
+            if (expr is! Reference) continue;
+
+            final column = e.columns.firstWhereOrNull((c) =>
+                c.columnName.toLowerCase() == expr.columnName.toLowerCase());
+            if (column != null && !column.isNonNullable) {
+              context.reportError(
+                AnalysisError(
+                  type: AnalysisErrorType.nullableColumnInStrictPrimaryKey,
+                  message:
+                      'This column must be marked as `NOT NULL` to be used in '
+                      'a `PRIMARY KEY` clause of a `STRICT` table.',
+                  relevantNode: columnName,
+                ),
+              );
+            }
+          }
+        }
       }
+    }
+
+    if (e.withoutRowId && !hasPrimaryKeyDeclaration) {
+      context.reportError(
+        AnalysisError(
+          type: AnalysisErrorType.missingPrimaryKey,
+          message: 'Missing PRIMARY KEY declaration for a table without rowid.',
+          relevantNode: e.tableNameToken ?? e,
+        ),
+      );
     }
 
     visitChildren(e, arg);
@@ -74,6 +169,71 @@ class LintingVisitor extends RecursiveVisitor<void, void> {
   }
 
   @override
+  void visitReturning(Returning e, void arg) {
+    // RETURNING was added in sqlite version 3.35.0
+    if (context.engineOptions.version < SqliteVersion.v3_35) {
+      context.reportError(AnalysisError(
+        type: AnalysisErrorType.notSupportedInDesiredVersion,
+        message: 'RETURNING requires sqlite version 3.35 or later',
+        relevantNode: e,
+      ));
+
+      return;
+    }
+
+    // https://www.sqlite.org/lang_returning.html#limitations_and_caveats
+    // Returning is not allowed in triggers
+    if (!_isTopLevelStatement) {
+      context.reportError(AnalysisError(
+        type: AnalysisErrorType.illegalUseOfReturning,
+        message: 'RETURNING is not allowed in triggers',
+        relevantNode: e,
+      ));
+    }
+
+    // Returning is not allowed against virtual tables
+    final parent = e.parent;
+    if (parent is HasPrimarySource) {
+      final source = parent.table;
+      if (source is TableReference) {
+        final referenced = source.resultSet?.unalias();
+        if (referenced is Table && referenced.isVirtual) {
+          context.reportError(AnalysisError(
+            type: AnalysisErrorType.illegalUseOfReturning,
+            message: 'RETURNING is not allowed against virtual tables',
+            relevantNode: e,
+          ));
+        }
+      }
+    }
+
+    for (final column in e.columns) {
+      // Table wildcards are not currently allowed, see
+      // https://www.sqlite.org/src/info/132994c8b1063bfb
+      if (column is StarResultColumn && column.tableName != null) {
+        context.reportError(AnalysisError(
+          type: AnalysisErrorType.synctactic,
+          message: 'Columns in RETURNING may not use the TABLE.* syntax',
+          relevantNode: column,
+        ));
+      } else if (column is ExpressionResultColumn) {
+        // While we're at it, window expressions aren't allowed either
+        if (column.expression is AggregateExpression) {
+          context.reportError(
+            AnalysisError(
+              type: AnalysisErrorType.illegalUseOfReturning,
+              message: 'Aggregate expressions are not allowed in RETURNING',
+              relevantNode: column.expression,
+            ),
+          );
+        }
+      }
+    }
+
+    visitChildren(e, arg);
+  }
+
+  @override
   void visitTableConstraint(TableConstraint e, void arg) {
     if (e is KeyClause && e.isPrimaryKey) {
       // Primary key clauses may only include simple columns
@@ -90,6 +250,14 @@ class LintingVisitor extends RecursiveVisitor<void, void> {
     }
 
     visitChildren(e, arg);
+  }
+
+  @override
+  void visitCreateTriggerStatement(CreateTriggerStatement e, void arg) {
+    final topLevelBefore = _isTopLevelStatement;
+    _isTopLevelStatement = false;
+    visitChildren(e, arg);
+    _isTopLevelStatement = topLevelBefore;
   }
 
   @override
@@ -154,6 +322,22 @@ class LintingVisitor extends RecursiveVisitor<void, void> {
   }
 
   @override
+  void visitUpsertClause(UpsertClause e, void arg) {
+    final hasMultipleClauses = e.entries.length > 1;
+
+    if (hasMultipleClauses && options.version < SqliteVersion.v3_35) {
+      context.reportError(AnalysisError(
+        type: AnalysisErrorType.notSupportedInDesiredVersion,
+        relevantNode: e,
+        message:
+            'Multiple on conflict clauses require sqlite version 3.35 or later',
+      ));
+    }
+
+    visitChildren(e, arg);
+  }
+
+  @override
   void visitValuesSelectStatement(ValuesSelectStatement e, void arg) {
     final expectedColumns = e.resolvedColumns!.length;
 
@@ -171,5 +355,16 @@ class LintingVisitor extends RecursiveVisitor<void, void> {
     }
 
     visitChildren(e, arg);
+  }
+
+  @override
+  void visitRaiseExpression(RaiseExpression e, void arg) {
+    if (_isTopLevelStatement) {
+      context.reportError(AnalysisError(
+        type: AnalysisErrorType.raiseMisuse,
+        relevantNode: e,
+        message: 'RAISE can only be used in a trigger.',
+      ));
+    }
   }
 }

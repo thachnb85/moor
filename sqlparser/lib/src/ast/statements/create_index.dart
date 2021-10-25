@@ -1,4 +1,8 @@
-part of '../ast.dart';
+import '../../reader/tokenizer/token.dart';
+import '../ast.dart'; // todo: Remove this import
+import '../node.dart';
+import '../visitor.dart';
+import 'statement.dart';
 
 class CreateIndexStatement extends Statement
     implements CreatingStatement, StatementWithWhere {
@@ -8,7 +12,7 @@ class CreateIndexStatement extends Statement
   IdentifierToken? nameToken;
 
   TableReference on;
-  final List<IndexedColumn> columns;
+  List<IndexedColumn> columns;
   @override
   Expression? where;
 
@@ -31,7 +35,7 @@ class CreateIndexStatement extends Statement
   @override
   void transformChildren<A>(Transformer<A> transformer, A arg) {
     on = transformer.transformChild(on, this, arg);
-    transformer.transformChildren(columns, this, arg);
+    columns = transformer.transformChildren(columns, this, arg);
     where = transformer.transformNullableChild(where, this, arg);
   }
 

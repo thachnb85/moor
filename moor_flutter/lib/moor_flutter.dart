@@ -1,14 +1,15 @@
 /// Flutter implementation for the moor database. This library merely provides
 /// a thin level of abstraction between the
-/// [sqflite](https://pub.dartlang.org/packages/sqflite) library and
+/// [sqflite](https://pub.dev/packages/sqflite) library and
 /// [moor](https://github.com/simolus3/moor)
 library moor_flutter;
 
 import 'dart:async';
 import 'dart:io';
-import 'package:path/path.dart';
-import 'package:moor/moor.dart';
+
 import 'package:moor/backends.dart';
+import 'package:moor/moor.dart';
+import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart' as s;
 
 export 'package:moor/moor.dart';
@@ -32,11 +33,8 @@ class _SqfliteDelegate extends DatabaseDelegate with _SqfliteExecutor {
   _SqfliteDelegate(this.inDbFolder, this.path,
       {this.singleInstance = true, this.creator});
 
-  DbVersionDelegate? _delegate;
   @override
-  DbVersionDelegate get versionDelegate {
-    return _delegate ??= _SqfliteVersionDelegate(db);
-  }
+  late final DbVersionDelegate versionDelegate = _SqfliteVersionDelegate(db);
 
   @override
   TransactionDelegate get transactionDelegate =>
@@ -49,7 +47,7 @@ class _SqfliteDelegate extends DatabaseDelegate with _SqfliteExecutor {
   Future<void> open(QueryExecutorUser user) async {
     String resolvedPath;
     if (inDbFolder) {
-      resolvedPath = join((await s.getDatabasesPath())!, path);
+      resolvedPath = join(await s.getDatabasesPath(), path);
     } else {
       resolvedPath = path;
     }
@@ -209,4 +207,11 @@ class FlutterQueryExecutor extends DelegatedDatabase {
     final sqfliteDelegate = delegate as _SqfliteDelegate;
     return sqfliteDelegate.isOpen ? sqfliteDelegate.db : null;
   }
+
+  @override
+  // We're not really required to be sequential since sqflite has an internal
+  // lock to bring statements into a sequential order.
+  // Setting isSequential here helps with moor cancellations in stream queries
+  // though.
+  bool get isSequential => true;
 }

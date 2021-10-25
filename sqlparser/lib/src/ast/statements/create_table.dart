@@ -1,19 +1,23 @@
-part of '../ast.dart';
+import 'package:source_span/source_span.dart';
+
+import '../../reader/tokenizer/token.dart';
+import '../ast.dart'; // todo: Remove this import
+import 'statement.dart';
 
 abstract class TableInducingStatement extends Statement
     implements CreatingStatement {
   final bool ifNotExists;
   final String tableName;
 
-  /// Specific to moor. Overrides the name of the data class used to hold a
-  /// result for of this table. Will be null when the moor extensions are not
-  /// enabled or if no name has been set.
-  final String? overriddenDataClassName;
-
+  /// Moor-specific information about the desired name of a Dart class for this
+  /// table.
+  ///
+  /// This will always be `null` when moor extensions are not enabled.
+  MoorTableName? moorTableName;
   Token? tableNameToken;
 
   TableInducingStatement._(this.ifNotExists, this.tableName,
-      [this.overriddenDataClassName]);
+      [this.moorTableName]);
 
   @override
   String get createdName => tableName;
@@ -22,21 +26,31 @@ abstract class TableInducingStatement extends Statement
 /// A "CREATE TABLE" statement, see https://www.sqlite.org/lang_createtable.html
 /// for the individual components.
 class CreateTableStatement extends TableInducingStatement {
-  final List<ColumnDefinition> columns;
-  final List<TableConstraint> tableConstraints;
+  List<ColumnDefinition> columns;
+  List<TableConstraint> tableConstraints;
+
+  /// Whether this table has been defined with an `WITHOUT ROWID` clause.
   final bool withoutRowId;
+
+  /// Whether this table has been defined as `STRICT`.
+  ///
+  /// Strict tables are limited to a few column type names. Columns in strict
+  /// tables may not store other types.
+  final bool isStrict;
 
   Token? openingBracket;
   Token? closingBracket;
+  Token? strict;
 
-  CreateTableStatement(
-      {bool ifNotExists = false,
-      required String tableName,
-      this.columns = const [],
-      this.tableConstraints = const [],
-      this.withoutRowId = false,
-      String? overriddenDataClassName})
-      : super._(ifNotExists, tableName, overriddenDataClassName);
+  CreateTableStatement({
+    bool ifNotExists = false,
+    required String tableName,
+    this.columns = const [],
+    this.tableConstraints = const [],
+    this.withoutRowId = false,
+    this.isStrict = false,
+    MoorTableName? moorTableName,
+  }) : super._(ifNotExists, tableName, moorTableName);
 
   @override
   R accept<A, R>(AstVisitor<A, R> visitor, A arg) {
@@ -45,12 +59,19 @@ class CreateTableStatement extends TableInducingStatement {
 
   @override
   void transformChildren<A>(Transformer<A> transformer, A arg) {
-    transformer.transformChildren(columns, this, arg);
-    transformer.transformChildren(tableConstraints, this, arg);
+    columns = transformer.transformChildren(columns, this, arg);
+    tableConstraints =
+        transformer.transformChildren(tableConstraints, this, arg);
+    moorTableName =
+        transformer.transformNullableChild(moorTableName, this, arg);
   }
 
   @override
-  Iterable<AstNode> get childNodes => [...columns, ...tableConstraints];
+  Iterable<AstNode> get childNodes => [
+        ...columns,
+        ...tableConstraints,
+        if (moorTableName != null) moorTableName!,
+      ];
 }
 
 class CreateVirtualTableStatement extends TableInducingStatement {
@@ -73,8 +94,8 @@ class CreateVirtualTableStatement extends TableInducingStatement {
     required String tableName,
     required this.moduleName,
     this.arguments = const [],
-    String? overriddenDataClassName,
-  }) : super._(ifNotExists, tableName, overriddenDataClassName);
+    MoorTableName? moorTableName,
+  }) : super._(ifNotExists, tableName, moorTableName);
 
   @override
   R accept<A, R>(AstVisitor<A, R> visitor, A arg) {
@@ -82,8 +103,12 @@ class CreateVirtualTableStatement extends TableInducingStatement {
   }
 
   @override
-  void transformChildren<A>(Transformer<A> transformer, A arg) {}
+  void transformChildren<A>(Transformer<A> transformer, A arg) {
+    moorTableName =
+        transformer.transformNullableChild(moorTableName, this, arg);
+  }
 
   @override
-  Iterable<AstNode> get childNodes => const [];
+  Iterable<AstNode> get childNodes =>
+      [if (moorTableName != null) moorTableName!];
 }

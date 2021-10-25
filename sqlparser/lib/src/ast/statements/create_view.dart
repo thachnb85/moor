@@ -1,4 +1,8 @@
-part of '../ast.dart';
+import '../../reader/tokenizer/token.dart';
+import '../ast.dart'; // todo: Remove this import
+import '../node.dart';
+import '../visitor.dart';
+import 'statement.dart';
 
 /// A "CREATE VIEW" statement, see https://sqlite.org/lang_createview.html
 class CreateViewStatement extends Statement implements CreatingStatement {
@@ -11,11 +15,19 @@ class CreateViewStatement extends Statement implements CreatingStatement {
 
   final List<String>? columns;
 
-  CreateViewStatement(
-      {this.ifNotExists = false,
-      required this.viewName,
-      this.columns,
-      required this.query});
+  /// Moor-specific information about the desired name of a Dart class for this
+  /// table.
+  ///
+  /// This will always be `null` when moor extensions are not enabled.
+  MoorTableName? moorTableName;
+
+  CreateViewStatement({
+    this.ifNotExists = false,
+    required this.viewName,
+    this.columns,
+    required this.query,
+    this.moorTableName,
+  });
 
   @override
   String get createdName => viewName;
@@ -28,8 +40,11 @@ class CreateViewStatement extends Statement implements CreatingStatement {
   @override
   void transformChildren<A>(Transformer<A> transformer, A arg) {
     query = transformer.transformChild(query, this, arg);
+    moorTableName =
+        transformer.transformNullableChild(moorTableName, this, arg);
   }
 
   @override
-  Iterable<AstNode> get childNodes => [query];
+  Iterable<AstNode> get childNodes =>
+      [query, if (moorTableName != null) moorTableName!];
 }

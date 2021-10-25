@@ -58,7 +58,7 @@ class AstPreparingVisitor extends RecursiveVisitor<void, void> {
 
     if (isInFROM) {
       final surroundingSelect =
-          e.parents.firstWhere((node) => node is BaseSelectStatement).scope;
+          e.parents.firstWhere((node) => node is HasFrom).scope;
       final forked = surroundingSelect.createSibling();
       e.scope = forked;
     } else {
@@ -122,22 +122,19 @@ class AstPreparingVisitor extends RecursiveVisitor<void, void> {
   @override
   void defaultQueryable(Queryable e, void arg) {
     final scope = e.scope;
+
     e.when(
       isTable: (table) {
-        // we're looking at something like FROM table (AS alias). The alias
-        // acts like a table for expressions in the same scope, so let's
-        // register it.
-        if (table.as != null) {
-          // todo should we register a TableAlias instead? Some parts of this
-          // package and moor_generator might depend on this being a table
-          // directly (e.g. nested result sets in moor).
-          // Same for nested selects, joins and table-valued functions below.
-          scope.register(table.as!, table);
-        }
+        final added = ResultSetAvailableInStatement(table, table);
+        table.availableResultSet = added;
+
+        scope.register(table.as ?? table.tableName, added);
       },
       isSelect: (select) {
         if (select.as != null) {
-          scope.register(select.as!, select.statement);
+          final added = ResultSetAvailableInStatement(select, select.statement);
+          select.availableResultSet = added;
+          scope.register(select.as!, added);
         }
       },
       isJoin: (join) {
@@ -146,10 +143,9 @@ class AstPreparingVisitor extends RecursiveVisitor<void, void> {
         // dont't need to do anything here.
       },
       isTableFunction: (function) {
-        if (function.as != null) {
-          scope.register(function.as!, function);
-        }
-        scope.register(function.name, function);
+        final added = ResultSetAvailableInStatement(function, function);
+        function.availableResultSet = added;
+        scope.register(function.as ?? function.name, added);
       },
     );
 
@@ -224,9 +220,19 @@ class AstPreparingVisitor extends RecursiveVisitor<void, void> {
 
   @override
   void visitUpsertClause(UpsertClause e, void arg) {
-    // report syntax error if DO UPDATE clause is used without specifying a
-    // conflict target.
-    if (e.onColumns == null && e.action is DoUpdate) {
+    for (var i = 0; i < e.entries.length; i++) {
+      _visitUpsertClauseEntry(e.entries[i], i == e.entries.length - 1);
+    }
+  }
+
+  void _visitUpsertClauseEntry(UpsertClauseEntry e, bool isLast) {
+    // Every DoUpdate except for the last ON CONFLICT clause must have a
+    // conflict target. When using older sqlite versions, every clause needs
+    // a conflict target.
+    final lastWithoutTargetOk =
+        context.engineOptions.version >= SqliteVersion.v3_35;
+    final withoutTargetOk = lastWithoutTargetOk && isLast;
+    if (e.onColumns == null && e.action is DoUpdate && !withoutTargetOk) {
       context.reportError(AnalysisError(
         type: AnalysisErrorType.synctactic,
         message: 'Expected a conflict clause when using DO UPDATE',
@@ -241,6 +247,6 @@ class AstPreparingVisitor extends RecursiveVisitor<void, void> {
       _forkScope(e.action, inheritAvailableColumns: true);
     }
 
-    visitChildren(e, arg);
+    visitChildren(e, null);
   }
 }

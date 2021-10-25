@@ -1,6 +1,6 @@
+import 'package:sqlparser/sqlparser.dart';
 import 'package:sqlparser/src/reader/tokenizer/token.dart';
 import 'package:test/test.dart';
-import 'package:sqlparser/sqlparser.dart';
 
 import 'utils.dart';
 
@@ -9,7 +9,7 @@ void main() {
     testStatement(
       'DELETE FROM tbl WHERE id = 5',
       DeleteStatement(
-        from: TableReference('tbl', null),
+        from: TableReference('tbl'),
         where: BinaryExpression(
           Reference(columnName: 'id'),
           token(TokenType.equal),
@@ -18,6 +18,16 @@ void main() {
             token(TokenType.numberLiteral),
           ),
         ),
+      ),
+    );
+  });
+
+  test('parses delete statements with RETURNING', () {
+    testStatement(
+      'DELETE FROM tbl RETURNING *;',
+      DeleteStatement(
+        from: TableReference('tbl'),
+        returning: Returning([StarResultColumn()]),
       ),
     );
   });

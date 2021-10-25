@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:moor_example/bloc.dart';
 import 'package:moor_example/database/database.dart';
-import 'package:intl/intl.dart';
 import 'package:moor_example/widgets/todo_edit_dialog.dart';
 import 'package:provider/provider.dart';
 
@@ -28,7 +28,7 @@ class TodoCard extends StatelessWidget {
       );
     } else {
       dueDate = Text(
-        _format.format(entry.targetDate),
+        _format.format(entry.targetDate!),
         style: const TextStyle(fontSize: 12),
       );
     }
@@ -67,7 +67,8 @@ class TodoCard extends StatelessWidget {
                 // We delete the entry here. Again, notice how we don't have to
                 // call setState() or inform the parent widget. Moor will take
                 // care of updating the underlying data automatically
-                Provider.of<TodoAppBloc>(context).deleteEntry(entry);
+                Provider.of<TodoAppBloc>(context, listen: false)
+                    .deleteEntry(entry);
               },
             )
           ],

@@ -48,11 +48,22 @@ class ReferenceScope {
   }
 
   set availableColumns(List<Column>? value) {
-    _availableColumns = value;
+    // guard against lists of subtype of column
+    if (value != null) {
+      _availableColumns = <Column>[...value];
+    } else {
+      _availableColumns = null;
+    }
   }
 
   ReferenceScope(this.parent,
       {this.root, this.inheritAvailableColumns = false});
+
+  void addAvailableColumn(Column column) {
+    // make sure _availableColumns is resolved and mutable
+    final ownColumns = _availableColumns ??= <Column>[...availableColumns];
+    ownColumns.add(column);
+  }
 
   ReferenceScope createChild({bool? inheritAvailableColumns}) {
     // wonder why we're creating a linked list of reference scopes instead of
@@ -73,6 +84,14 @@ class ReferenceScope {
   /// Registers something that can be referenced in this and child scopes.
   void register(String identifier, Referencable ref) {
     _references.putIfAbsent(identifier.toUpperCase(), () => []).add(ref);
+  }
+
+  /// Registers both a [TableAlias] and a [ResultSetAvailableInStatement] so
+  /// that the alias can be used in expressions without being selected.
+  void registerUsableAlias(AstNode origin, ResultSet resultSet, String alias) {
+    final createdAlias = TableAlias(resultSet, alias);
+    register(alias, createdAlias);
+    register(alias, ResultSetAvailableInStatement(origin, createdAlias));
   }
 
   /// Resolves to a [Referencable] with the given [name] and of the type [T].

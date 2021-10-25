@@ -15,9 +15,10 @@ CREATE TABLE tbl (
 
 all: SELECT /* COUNT(*), */ * FROM tbl WHERE $predicate;
 @special: SELECT * FROM tbl;
-typeHints(:foo AS TEXT OR NULL, $predicate = TRUE):
+typeHints(REQUIRED :foo AS TEXT OR NULL, $predicate = TRUE):
   SELECT :foo WHERE $predicate;
 nested AS MyResultSet: SELECT foo.** FROM tbl foo;
+add: INSERT INTO tbl $row RETURNING *;
 ''';
 
 void main() {
@@ -45,7 +46,7 @@ void main() {
                 ForeignKeyColumnConstraint(
                   null,
                   ForeignKeyClause(
-                    foreignTable: TableReference('other', null),
+                    foreignTable: TableReference('other'),
                     columnNames: [
                       Reference(columnName: 'location'),
                     ],
@@ -55,13 +56,13 @@ void main() {
               ],
             ),
           ],
-          overriddenDataClassName: 'RowName',
+          moorTableName: MoorTableName('RowName', false),
         ),
         DeclaredStatement(
           SimpleName('all'),
           SelectStatement(
             columns: [StarResultColumn(null)],
-            from: TableReference('tbl', null),
+            from: TableReference('tbl'),
             where: DartExpressionPlaceholder(name: 'predicate'),
           ),
         ),
@@ -69,18 +70,21 @@ void main() {
           SpecialStatementIdentifier('special'),
           SelectStatement(
             columns: [StarResultColumn(null)],
-            from: TableReference('tbl', null),
+            from: TableReference('tbl'),
           ),
         ),
         DeclaredStatement(
           SimpleName('typeHints'),
-          SelectStatement(columns: [
-            ExpressionResultColumn(
-              expression: ColonNamedVariable(
-                ColonVariableToken(fakeSpan(':foo'), ':foo'),
+          SelectStatement(
+            columns: [
+              ExpressionResultColumn(
+                expression: ColonNamedVariable(
+                  ColonVariableToken(fakeSpan(':foo'), ':foo'),
+                ),
               ),
-            ),
-          ]),
+            ],
+            where: DartExpressionPlaceholder(name: 'predicate'),
+          ),
           parameters: [
             VariableTypeHint(
               ColonNamedVariable(
@@ -88,6 +92,7 @@ void main() {
               ),
               'TEXT',
               orNull: true,
+              isRequired: true,
             ),
             DartPlaceholderDefaultValue(
               'predicate',
@@ -99,9 +104,52 @@ void main() {
           SimpleName('nested'),
           SelectStatement(
             columns: [NestedStarResultColumn('foo')],
-            from: TableReference('tbl', 'foo'),
+            from: TableReference('tbl', as: 'foo'),
           ),
           as: 'MyResultSet',
+        ),
+        DeclaredStatement(
+          SimpleName('add'),
+          InsertStatement(
+            table: TableReference('tbl'),
+            source: DartInsertablePlaceholder(name: 'row'),
+            targetColumns: const [],
+            returning: Returning([
+              StarResultColumn(),
+            ]),
+          ),
+        )
+      ]),
+    );
+  });
+
+  test('parses transaction blocks', () {
+    testMoorFile(
+      '''
+test: BEGIN
+  UPDATE foo SET bar = baz;
+  DELETE FROM t;
+END;
+''',
+      MoorFile([
+        DeclaredStatement(
+          SimpleName('test'),
+          TransactionBlock(
+            begin: BeginTransactionStatement(),
+            innerStatements: [
+              UpdateStatement(
+                table: TableReference('foo'),
+                set: [
+                  SetComponent(
+                    column: Reference(columnName: 'bar'),
+                    expression: Reference(columnName: 'baz'),
+                  ),
+                ],
+              ),
+              DeleteStatement(from: TableReference('t')),
+            ],
+            commit: CommitStatement(),
+          ),
         ),
       ]),
     );
@@ -141,5 +189,29 @@ SELECT DISTINCT A.* FROM works A, works B ON A.id =
         result.errors.single,
         isA<ParsingError>()
             .having((e) => e.token.lexeme, 'token.lexeme', 'WHERE'));
+  });
+
+  test('parses REQUIRED without type hint', () {
+    final variable = ColonVariableToken(fakeSpan(':category'), ':category');
+    testMoorFile(
+      'test(REQUIRED :category): SELECT :category;',
+      MoorFile([
+        DeclaredStatement(
+          SimpleName('test'),
+          SelectStatement(columns: [
+            ExpressionResultColumn(
+              expression: ColonNamedVariable(variable),
+            ),
+          ]),
+          parameters: [
+            VariableTypeHint(
+              ColonNamedVariable(variable),
+              null,
+              isRequired: true,
+            ),
+          ],
+        ),
+      ]),
+    );
   });
 }

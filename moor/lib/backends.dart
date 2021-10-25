@@ -1,9 +1,8 @@
 /// Utility classes to implement custom database backends that work together
 /// with moor.
+@moorDeprecated
 library backends;
 
-export 'src/runtime/executor/executor.dart';
-export 'src/runtime/executor/helpers/delegates.dart';
-export 'src/runtime/executor/helpers/engines.dart';
-export 'src/runtime/executor/helpers/results.dart';
-export 'src/runtime/query_builder/query_builder.dart' show SqlDialect;
+import 'package:moor/src/deprecated.dart';
+
+export 'package:drift/backends.dart';

@@ -74,6 +74,14 @@ BEGIN
 END;
       ''');
       });
+
+      test('Using RAISE', () {
+        testFormat('''
+CREATE TRIGGER my_trigger AFTER DELETE ON t1 BEGIN
+  SELECT RAISE(ABORT, 'please don''t');
+END;
+        ''');
+      });
     });
 
     test('view', () {
@@ -86,8 +94,9 @@ CREATE VIEW my_view AS SELECT * FROM t1;
       ''');
     });
 
-    test('table', () {
-      testFormat('''
+    group('table', () {
+      test('complex', () {
+        testFormat('''
 CREATE TABLE IF NOT EXISTS my_table(
   foo TEXT NOT NULL PRIMARY KEY DEFAULT (3 * 4),
   baz INT CONSTRAINT not_null NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -106,16 +115,35 @@ CREATE TABLE IF NOT EXISTS my_table(
   FOREIGN KEY (bar) REFERENCES t2 (bax) ON DELETE SET DEFAULT NOT DEFERRABLE
 );
       ''');
+      });
 
-      testFormat('''
+      test('WITHOUT ROWID', () {
+        testFormat('''
 CREATE TABLE IF NOT EXISTS my_table(
   foo INTEGER NOT NULL PRIMARY KEY ASC
 ) WITHOUT ROWID;
       ''');
-    });
+      });
 
-    test('virtual table', () {
-      testFormat('CREATE VIRTUAL TABLE foo USING bar(a, b, c);');
+      test('STRICT', () {
+        testFormat('''
+CREATE TABLE IF NOT EXISTS my_table(
+  foo INTEGER NOT NULL PRIMARY KEY ASC
+) STRICT;
+      ''');
+      });
+
+      test('STRICT and WITHOUT ROWID', () {
+        testFormat('''
+CREATE TABLE IF NOT EXISTS my_table(
+  foo INTEGER NOT NULL PRIMARY KEY ASC
+) WITHOUT ROWID, STRICT;
+      ''');
+      });
+
+      test('virtual', () {
+        testFormat('CREATE VIRTUAL TABLE foo USING bar(a, b, c);');
+      });
     });
 
     test('index', () {
@@ -139,12 +167,32 @@ CREATE UNIQUE INDEX my_idx ON t1 (c1, c2, c3) WHERE c1 < c3;
     });
   });
 
+  group('misc', () {
+    test('transactions', () {
+      testFormat('BEGIN DEFERRED TRANSACTION;');
+      testFormat('BEGIN IMMEDIATE');
+      testFormat('BEGIN EXCLUSIVE');
+
+      testFormat('COMMIT');
+      testFormat('END TRANSACTION');
+    });
+  });
+
   group('query statements', () {
     group('select', () {
       test('with common table expressions', () {
         testFormat('''
           WITH RECURSIVE foo (id) AS (VALUES(1) UNION ALL SELECT id + 1 FROM foo)
             SELECT * FROM foo;
+        ''');
+      });
+
+      test('with materialized CTEs', () {
+        testFormat('''
+          WITH 
+            foo (id) AS NOT MATERIALIZED (SELECT 1),
+            bar (id) AS MATERIALIZED (SELECT 2)
+          SELECT * FROM foo UNION ALL SELECT * FROM bar;
         ''');
       });
 
@@ -204,6 +252,11 @@ CREATE UNIQUE INDEX my_idx ON t1 (c1, c2, c3) WHERE c1 < c3;
         ''');
       });
 
+      test('table references', () {
+        testFormat('SELECT * FROM foo');
+        testFormat('SELECT * FROM main.foo');
+      });
+
       test('limit', () {
         testFormat('SELECT * FROM foo LIMIT 3, 4');
         testFormat('SELECT * FROM foo LIMIT 4 OFFSET 3');
@@ -214,9 +267,15 @@ CREATE UNIQUE INDEX my_idx ON t1 (c1, c2, c3) WHERE c1 < c3;
       });
     });
 
-    test('delete', () {
-      testFormat(
-          'WITH foo (id) AS (SELECT * FROM bar) DELETE FROM bar WHERE x;');
+    group('delete', () {
+      test('with CTEs', () {
+        testFormat(
+            'WITH foo (id) AS (SELECT * FROM bar) DELETE FROM bar WHERE x;');
+      });
+
+      test('with returning', () {
+        testFormat('DELETE FROM foo RETURNING *');
+      });
     });
 
     group('insert', () {
@@ -225,8 +284,12 @@ CREATE UNIQUE INDEX my_idx ON t1 (c1, c2, c3) WHERE c1 < c3;
             'REPLACE INTO foo DEFAULT VALUES');
       });
 
-      test('insert into select', () {
+      test('into select', () {
         testFormat('INSERT INTO foo SELECT * FROM bar');
+      });
+
+      test('with returning', () {
+        testFormat('INSERT INTO foo DEFAULT VALUES RETURNING *');
       });
 
       test('upsert - do nothing', () {
@@ -237,6 +300,39 @@ CREATE UNIQUE INDEX my_idx ON t1 (c1, c2, c3) WHERE c1 < c3;
       test('upsert - update', () {
         testFormat('INSERT INTO foo VALUES (1, 2, 3) '
             'ON CONFLICT DO UPDATE SET a = b, c = d WHERE d < a;');
+      });
+
+      test('upsert - multiple clauses', () {
+        testFormat('INSERT INTO foo VALUES (1, 2, 3) '
+            'ON CONFLICT DO NOTHING '
+            'ON CONFLICT DO UPDATE SET a = b, c = d WHERE d < a;');
+      });
+    });
+
+    group('update', () {
+      test('simple', () {
+        testFormat('UPDATE foo SET bar = baz WHERE 1;');
+      });
+
+      test('with returning', () {
+        testFormat('UPDATE foo SET bar = baz RETURNING *');
+      });
+
+      const modes = [
+        'OR ABORT',
+        'OR FAIL',
+        'OR IGNORE',
+        'OR REPLACE',
+        ' OR ROLLBACK',
+      ];
+      for (var i = 0; i < modes.length; i++) {
+        test('failure mode #$i', () {
+          testFormat('UPDATE ${modes[i]} foo SET bar = baz');
+        });
+      }
+
+      test('from', () {
+        testFormat('UPDATE foo SET bar = baz FROM t1 CROSS JOIN t2');
       });
     });
   });
@@ -319,6 +415,12 @@ CREATE UNIQUE INDEX my_idx ON t1 (c1, c2, c3) WHERE c1 < c3;
     test('unary expression', () {
       testFormat('SELECT -(+(~3));');
     });
+
+    test('references', () {
+      testFormat('SELECT foo');
+      testFormat('SELECT foo.bar');
+      testFormat('SELECT foo.bar.baz');
+    });
   });
 
   group('moor', () {
@@ -335,12 +437,28 @@ CREATE UNIQUE INDEX my_idx ON t1 (c1, c2, c3) WHERE c1 < c3;
           kind: _ParseKind.moorFile);
       testFormat('foo: SELECT * FROM bar WHERE :id < 10;',
           kind: _ParseKind.moorFile);
+      testFormat('foo (REQUIRED :x AS TEXT OR NULL): SELECT :x;',
+          kind: _ParseKind.moorFile);
       testFormat(r'foo ($pred = FALSE): SELECT * FROM bar WHERE $pred;',
           kind: _ParseKind.moorFile);
     });
 
     test('nested star', () {
       testFormat('q: SELECT foo.** FROM foo;', kind: _ParseKind.moorFile);
+    });
+
+    test('transaction block', () {
+      testFormat(
+        '''
+test: BEGIN TRANSACTION
+  SELECT * FROM foo;
+  UPDATE foo SET bar = baz;
+  DELETE FROM x;
+  INSERT INTO foo VALUES (x, y, z);
+COMMIT TRANSACTION;
+''',
+        kind: _ParseKind.moorFile,
+      );
     });
   });
 

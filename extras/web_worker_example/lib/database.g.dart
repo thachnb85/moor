@@ -8,57 +8,53 @@ part of 'database.dart';
 
 // ignore_for_file: unnecessary_brace_in_string_interps, unnecessary_this
 class Entrie extends DataClass implements Insertable<Entrie> {
-  final int? id;
+  final int id;
   final String value;
-  Entrie({this.id, required this.value});
+  Entrie({required this.id, required this.value});
   factory Entrie.fromData(Map<String, dynamic> data, GeneratedDatabase db,
       {String? prefix}) {
     final effectivePrefix = prefix ?? '';
-    final intType = db.typeSystem.forDartType<int>();
-    final stringType = db.typeSystem.forDartType<String>();
     return Entrie(
-      id: intType.mapFromDatabaseResponse(data['${effectivePrefix}id']),
-      value:
-          stringType.mapFromDatabaseResponse(data['${effectivePrefix}text'])!,
+      id: const IntType()
+          .mapFromDatabaseResponse(data['${effectivePrefix}id'])!,
+      value: const StringType()
+          .mapFromDatabaseResponse(data['${effectivePrefix}text'])!,
     );
   }
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    if (!nullToAbsent || id != null) {
-      map['id'] = Variable<int?>(id);
-    }
+    map['id'] = Variable<int>(id);
     map['text'] = Variable<String>(value);
     return map;
   }
 
   EntriesCompanion toCompanion(bool nullToAbsent) {
     return EntriesCompanion(
-      id: id == null && nullToAbsent ? const Value.absent() : Value(id),
+      id: Value(id),
       value: Value(value),
     );
   }
 
   factory Entrie.fromJson(Map<String, dynamic> json,
       {ValueSerializer? serializer}) {
-    serializer ??= moorRuntimeOptions.defaultSerializer;
+    serializer ??= driftRuntimeOptions.defaultSerializer;
     return Entrie(
-      id: serializer.fromJson<int?>(json['id']),
+      id: serializer.fromJson<int>(json['id']),
       value: serializer.fromJson<String>(json['text']),
     );
   }
   @override
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= moorRuntimeOptions.defaultSerializer;
+    serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
-      'id': serializer.toJson<int?>(id),
+      'id': serializer.toJson<int>(id),
       'text': serializer.toJson<String>(value),
     };
   }
 
-  Entrie copyWith({Value<int?> id = const Value.absent(), String? value}) =>
-      Entrie(
-        id: id.present ? id.value : this.id,
+  Entrie copyWith({int? id, String? value}) => Entrie(
+        id: id ?? this.id,
         value: value ?? this.value,
       );
   @override
@@ -71,15 +67,15 @@ class Entrie extends DataClass implements Insertable<Entrie> {
   }
 
   @override
-  int get hashCode => $mrjf($mrjc(id.hashCode, value.hashCode));
+  int get hashCode => Object.hash(id, value);
   @override
-  bool operator ==(dynamic other) =>
+  bool operator ==(Object other) =>
       identical(this, other) ||
       (other is Entrie && other.id == this.id && other.value == this.value);
 }
 
 class EntriesCompanion extends UpdateCompanion<Entrie> {
-  final Value<int?> id;
+  final Value<int> id;
   final Value<String> value;
   const EntriesCompanion({
     this.id = const Value.absent(),
@@ -90,7 +86,7 @@ class EntriesCompanion extends UpdateCompanion<Entrie> {
     required String value,
   }) : value = Value(value);
   static Insertable<Entrie> custom({
-    Expression<int?>? id,
+    Expression<int>? id,
     Expression<String>? value,
   }) {
     return RawValuesInsertable({
@@ -99,7 +95,7 @@ class EntriesCompanion extends UpdateCompanion<Entrie> {
     });
   }
 
-  EntriesCompanion copyWith({Value<int?>? id, Value<String>? value}) {
+  EntriesCompanion copyWith({Value<int>? id, Value<String>? value}) {
     return EntriesCompanion(
       id: id ?? this.id,
       value: value ?? this.value,
@@ -110,7 +106,7 @@ class EntriesCompanion extends UpdateCompanion<Entrie> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     if (id.present) {
-      map['id'] = Variable<int?>(id.value);
+      map['id'] = Variable<int>(id.value);
     }
     if (value.present) {
       map['text'] = Variable<String>(value.value);
@@ -133,27 +129,23 @@ class Entries extends Table with TableInfo<Entries, Entrie> {
   final String? _alias;
   Entries(this._db, [this._alias]);
   final VerificationMeta _idMeta = const VerificationMeta('id');
-  late final GeneratedIntColumn id = _constructId();
-  GeneratedIntColumn _constructId() {
-    return GeneratedIntColumn('id', $tableName, true,
-        declaredAsPrimaryKey: true, $customConstraints: 'PRIMARY KEY');
-  }
-
+  late final GeneratedColumn<int?> id = GeneratedColumn<int?>(
+      'id', aliasedName, false,
+      typeName: 'INTEGER',
+      requiredDuringInsert: false,
+      $customConstraints: 'PRIMARY KEY');
   final VerificationMeta _valueMeta = const VerificationMeta('value');
-  late final GeneratedTextColumn value = _constructValue();
-  GeneratedTextColumn _constructValue() {
-    return GeneratedTextColumn('text', $tableName, false,
-        $customConstraints: 'NOT NULL');
-  }
-
+  late final GeneratedColumn<String?> value = GeneratedColumn<String?>(
+      'text', aliasedName, false,
+      typeName: 'TEXT',
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
   @override
   List<GeneratedColumn> get $columns => [id, value];
   @override
-  Entries get asDslTable => this;
+  String get aliasedName => _alias ?? 'entries';
   @override
-  String get $tableName => _alias ?? 'entries';
-  @override
-  final String actualTableName = 'entries';
+  String get actualTableName => 'entries';
   @override
   VerificationContext validateIntegrity(Insertable<Entrie> instance,
       {bool isInserting = false}) {
@@ -175,8 +167,8 @@ class Entries extends Table with TableInfo<Entries, Entrie> {
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
   Entrie map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : null;
-    return Entrie.fromData(data, _db, prefix: effectivePrefix);
+    return Entrie.fromData(data, _db,
+        prefix: tablePrefix != null ? '$tablePrefix.' : null);
   }
 
   @override
@@ -193,13 +185,14 @@ abstract class _$MyDatabase extends GeneratedDatabase {
   _$MyDatabase.connect(DatabaseConnection c) : super.connect(c);
   late final Entries entries = Entries(this);
   Selectable<Entrie> allEntries() {
-    return customSelect('SELECT * FROM entries',
-        variables: [], readsFrom: {entries}).map(entries.mapFromRow);
+    return customSelect('SELECT * FROM entries', variables: [], readsFrom: {
+      entries,
+    }).map(entries.mapFromRow);
   }
 
   Future<int> addEntry(String var1) {
     return customInsert(
-      'INSERT INTO entries (text) VALUES (?)',
+      'INSERT INTO entries (text) VALUES (?1)',
       variables: [Variable<String>(var1)],
       updates: {entries},
     );

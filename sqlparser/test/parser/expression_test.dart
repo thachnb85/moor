@@ -1,5 +1,5 @@
 import 'package:sqlparser/src/ast/ast.dart';
-import 'package:sqlparser/src/reader/parser/parser.dart';
+import 'package:sqlparser/src/reader/parser.dart';
 import 'package:sqlparser/src/reader/tokenizer/scanner.dart';
 import 'package:sqlparser/src/reader/tokenizer/token.dart';
 import 'package:sqlparser/src/utils/ast_equality.dart';
@@ -106,7 +106,7 @@ final Map<String, Expression> _testCases = {
     ExistsExpression(
       select: SelectStatement(
         columns: [StarResultColumn(null)],
-        from: TableReference('demo', null),
+        from: TableReference('demo'),
       ),
     ),
   ),
@@ -141,7 +141,7 @@ final Map<String, Expression> _testCases = {
             expression: Reference(columnName: 'col'),
           )
         ],
-        from: TableReference('tbl', null),
+        from: TableReference('tbl'),
       ),
     ),
   ),
@@ -188,6 +188,16 @@ final Map<String, Expression> _testCases = {
       NumberedVariable(QuestionMarkVariableToken(fakeSpan('?'), null)),
       NumberedVariable(QuestionMarkVariableToken(fakeSpan('?'), null)),
     ]),
+  ),
+  'RAISE(IGNORE)': RaiseExpression(RaiseKind.ignore),
+  "RAISE(ROLLBACK, 'Not allowed')":
+      RaiseExpression(RaiseKind.rollback, 'Not allowed'),
+  'foo': Reference(columnName: 'foo'),
+  'foo.bar': Reference(entityName: 'foo', columnName: 'bar'),
+  'foo.bar.baz': Reference(
+    schemaName: 'foo',
+    entityName: 'bar',
+    columnName: 'baz',
   ),
 };
 
