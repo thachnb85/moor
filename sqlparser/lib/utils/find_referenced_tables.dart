@@ -19,7 +19,11 @@ class ReferencedTablesVisitor extends RecursiveVisitor<void, void> {
 
   @override
   void visitReference(Reference e, void arg) {
-    final column = e.resolved;
+    var column = e.resolved;
+    while (column is DelegatedColumn) {
+      column = column.innerColumn;
+    }
+
     if (column is TableColumn) {
       _add(column.table);
     } else if (column is ViewColumn) {
@@ -30,11 +34,7 @@ class ReferencedTablesVisitor extends RecursiveVisitor<void, void> {
   }
 
   NamedResultSet? _toResultSetOrNull(ResolvesToResultSet? resultSet) {
-    var resolved = resultSet?.resultSet;
-
-    while (resolved != null && resolved is TableAlias) {
-      resolved = resolved.delegate;
-    }
+    final resolved = resultSet?.resultSet?.unalias();
 
     return resolved is NamedResultSet ? resolved : null;
   }

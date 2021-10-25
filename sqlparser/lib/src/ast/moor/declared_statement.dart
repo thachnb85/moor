@@ -1,11 +1,18 @@
-part of '../ast.dart';
+import '../../reader/tokenizer/token.dart';
+import '../ast.dart' show Variable;
+import '../expressions/expressions.dart';
+import '../node.dart';
+import '../statements/statement.dart';
+import '../statements/transaction.dart';
+import '../visitor.dart';
+import 'moor_file.dart';
 
 /// A declared statement inside a `.moor` file. It consists of an identifier,
 /// followed by a colon and the query to run.
 class DeclaredStatement extends Statement implements PartOfMoorFile {
   final DeclaredStatementIdentifier identifier;
-  CrudStatement statement;
-  final List<StatementParameter> parameters;
+  AstNode statement;
+  List<StatementParameter> parameters;
 
   /// The desired result class name, if set.
   final String? as;
@@ -22,13 +29,13 @@ class DeclaredStatement extends Statement implements PartOfMoorFile {
 
   @override
   R accept<A, R>(AstVisitor<A, R> visitor, A arg) {
-    return visitor.visitMoorDeclaredStatement(this, arg);
+    return visitor.visitMoorSpecificNode(this, arg);
   }
 
   @override
   void transformChildren<A>(Transformer<A> transformer, A arg) {
     statement = transformer.transformChild(statement, this, arg);
-    transformer.transformChildren(parameters, this, arg);
+    parameters = transformer.transformChildren(parameters, this, arg);
   }
 
   @override
@@ -88,10 +95,11 @@ class SpecialStatementIdentifier extends DeclaredStatementIdentifier {
 /// A statement parameter, which appears between brackets after the statement
 /// identifier.
 /// In `selectString(:name AS TEXT): SELECT :name`, `:name AS TEXT` is a
-abstract class StatementParameter extends AstNode {
+/// statement parameter.
+abstract class StatementParameter extends AstNode implements MoorSpecificNode {
   @override
   R accept<A, R>(AstVisitor<A, R> visitor, A arg) {
-    return visitor.visitMoorStatementParameter(this, arg);
+    return visitor.visitMoorSpecificNode(this, arg);
   }
 }
 
@@ -102,12 +110,14 @@ abstract class StatementParameter extends AstNode {
 /// cases in which the resolver doesn't yield acceptable results.
 class VariableTypeHint extends StatementParameter {
   Variable variable;
-  final String typeName;
+  final bool isRequired;
+  final String? typeName;
   final bool orNull;
 
   Token? as;
 
-  VariableTypeHint(this.variable, this.typeName, {this.orNull = false});
+  VariableTypeHint(this.variable, this.typeName,
+      {this.orNull = false, this.isRequired = false});
 
   @override
   Iterable<AstNode> get childNodes => [variable];
@@ -141,5 +151,32 @@ class DartPlaceholderDefaultValue extends StatementParameter {
   @override
   void transformChildren<A>(Transformer<A> transformer, A arg) {
     defaultValue = transformer.transformChild(defaultValue, this, arg);
+  }
+}
+
+class TransactionBlock extends AstNode implements MoorSpecificNode {
+  BeginTransactionStatement begin;
+  List<CrudStatement> innerStatements;
+  CommitStatement commit;
+
+  TransactionBlock({
+    required this.begin,
+    required this.innerStatements,
+    required this.commit,
+  });
+
+  @override
+  R accept<A, R>(AstVisitor<A, R> visitor, A arg) {
+    return visitor.visitMoorSpecificNode(this, arg);
+  }
+
+  @override
+  Iterable<AstNode> get childNodes => [];
+
+  @override
+  void transformChildren<A>(Transformer<A> transformer, A arg) {
+    begin = transformer.transformChild(begin, this, arg);
+    innerStatements = transformer.transformChildren(innerStatements, this, arg);
+    commit = transformer.transformChild(commit, this, arg);
   }
 }

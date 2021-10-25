@@ -31,23 +31,31 @@ class Table extends NamedResultSet with HasMetaMixin implements HumanReadable {
   /// The ast node that created this table
   final TableInducingStatement? definition;
 
+  /// Whether this is a virtual table.
+  final bool isVirtual;
+
   @override
   bool get visibleToChildren => true;
 
   TableColumn? _rowIdColumn;
 
   /// Constructs a table from the known [name] and [resolvedColumns].
-  Table(
-      {required this.name,
-      required this.resolvedColumns,
-      this.withoutRowId = false,
-      this.tableConstraints = const [],
-      this.definition}) {
+  Table({
+    required this.name,
+    required this.resolvedColumns,
+    this.withoutRowId = false,
+    this.tableConstraints = const [],
+    this.definition,
+    this.isVirtual = false,
+  }) {
     for (final column in resolvedColumns) {
       column.table = this;
 
       if (_rowIdColumn == null && column.isAliasForRowId()) {
         _rowIdColumn = column;
+        // By design, the rowid is non-nullable, even if there isn't a NOT NULL
+        // constraint set on the column definition.
+        column._type = const ResolvedType(type: BasicType.int, nullable: false);
       }
     }
   }
@@ -71,11 +79,14 @@ class Table extends NamedResultSet with HasMetaMixin implements HumanReadable {
   }
 }
 
-class TableAlias implements ResultSet, HumanReadable {
+class TableAlias extends NamedResultSet implements HumanReadable {
   final ResultSet delegate;
   final String alias;
 
   TableAlias(this.delegate, this.alias);
+
+  @override
+  String get name => alias;
 
   @override
   List<Column> get resolvedColumns => delegate.resolvedColumns!;

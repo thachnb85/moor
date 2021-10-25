@@ -1,15 +1,16 @@
 name: encrypted_moor
 description: Encryption support for moor, built with sqflite_sqlcipher
 version: 1.0.0
-author: Simon Binder <oss@simonbinder.eu>
 
 environment:
   sdk: '>=2.12.0-0 <3.0.0'
 
 dependencies:
-  moor: ^4.0.0-nullsafety.0
-  sqflite_sqlcipher: ^2.0.0-nullsafety
+  moor: ^4.0.0
+  sqflite_sqlcipher: ^2.0.0
 
 dependency_overrides:
+  drift:
+    path: ../../drift
   moor:
     path: ../../moor

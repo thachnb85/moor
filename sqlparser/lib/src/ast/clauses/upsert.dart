@@ -1,13 +1,11 @@
-part of '../ast.dart';
+import '../ast.dart'; // todo: Remove this import
+import '../node.dart';
+import '../statements/create_index.dart' show IndexedColumn;
 
-class UpsertClause extends AstNode implements HasWhereClause {
-  final List<IndexedColumn>? onColumns;
-  @override
-  Expression? where;
+class UpsertClause extends AstNode {
+  List<UpsertClauseEntry> entries;
 
-  UpsertAction action;
-
-  UpsertClause({this.onColumns, this.where, required this.action});
+  UpsertClause(this.entries);
 
   @override
   R accept<A, R>(AstVisitor<A, R> visitor, A arg) {
@@ -15,8 +13,33 @@ class UpsertClause extends AstNode implements HasWhereClause {
   }
 
   @override
+  List<UpsertClauseEntry> get childNodes => entries;
+
+  @override
   void transformChildren<A>(Transformer<A> transformer, A arg) {
-    transformer.transformChildren(onColumns!, this, arg);
+    entries = transformer.transformChildren(entries, this, arg);
+  }
+}
+
+class UpsertClauseEntry extends AstNode implements HasWhereClause {
+  List<IndexedColumn>? onColumns;
+  @override
+  Expression? where;
+
+  UpsertAction action;
+
+  UpsertClauseEntry({this.onColumns, this.where, required this.action});
+
+  @override
+  R accept<A, R>(AstVisitor<A, R> visitor, A arg) {
+    return visitor.visitUpsertClauseEntry(this, arg);
+  }
+
+  @override
+  void transformChildren<A>(Transformer<A> transformer, A arg) {
+    if (onColumns != null) {
+      onColumns = transformer.transformChildren(onColumns!, this, arg);
+    }
     where = transformer.transformNullableChild(where, this, arg);
     action = transformer.transformChild(action, this, arg);
   }
@@ -47,7 +70,7 @@ class DoNothing extends UpsertAction {
 }
 
 class DoUpdate extends UpsertAction implements HasWhereClause {
-  final List<SetComponent> set;
+  List<SetComponent> set;
   @override
   Expression? where;
 
@@ -60,7 +83,7 @@ class DoUpdate extends UpsertAction implements HasWhereClause {
 
   @override
   void transformChildren<A>(Transformer<A> transformer, A arg) {
-    transformer.transformChildren(set, this, arg);
+    set = transformer.transformChildren(set, this, arg);
     where = transformer.transformNullableChild(where, this, arg);
   }
 

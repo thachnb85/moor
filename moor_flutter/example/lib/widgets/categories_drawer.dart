@@ -16,7 +16,7 @@ class CategoriesDrawer extends StatelessWidget {
               style: Theme.of(context)
                   .textTheme
                   .subtitle1
-                  .copyWith(color: Colors.white),
+                  ?.copyWith(color: Colors.white),
             ),
             decoration: const BoxDecoration(color: Colors.orange),
           ),
@@ -38,9 +38,13 @@ class CategoriesDrawer extends StatelessWidget {
           const Spacer(),
           Row(
             children: <Widget>[
-              FlatButton(
+              TextButton(
                 child: const Text('Add category'),
-                textColor: Theme.of(context).accentColor,
+                style: ButtonStyle(
+                  foregroundColor: MaterialStateProperty.all(
+                    Theme.of(context).colorScheme.secondary,
+                  ),
+                ),
                 onPressed: () {
                   showDialog(
                       context: context, builder: (_) => AddCategoryDialog());
@@ -57,7 +61,7 @@ class CategoriesDrawer extends StatelessWidget {
 class _CategoryDrawerEntry extends StatelessWidget {
   final CategoryWithActiveInfo entry;
 
-  const _CategoryDrawerEntry({Key key, this.entry}) : super(key: key);
+  const _CategoryDrawerEntry({Key? key, required this.entry}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +70,7 @@ class _CategoryDrawerEntry extends StatelessWidget {
     if (category == null) {
       title = 'No category';
     } else {
-      title = category.description ?? 'Unnamed';
+      title = category.description;
     }
 
     final isActive = entry.isActive;
@@ -77,12 +81,13 @@ class _CategoryDrawerEntry extends StatelessWidget {
         title,
         style: TextStyle(
           fontWeight: FontWeight.bold,
-          color: isActive ? Theme.of(context).accentColor : Colors.black,
+          color:
+              isActive ? Theme.of(context).colorScheme.secondary : Colors.black,
         ),
       ),
       Padding(
         padding: const EdgeInsets.all(8),
-        child: Text('${entry.categoryWithCount?.count} entries'),
+        child: Text('${entry.categoryWithCount.count} entries'),
       ),
     ];
 
@@ -101,15 +106,17 @@ class _CategoryDrawerEntry extends StatelessWidget {
                   title: const Text('Delete'),
                   content: Text('Really delete category $title?'),
                   actions: <Widget>[
-                    FlatButton(
+                    TextButton(
                       child: const Text('Cancel'),
                       onPressed: () {
                         Navigator.pop(context, false);
                       },
                     ),
-                    FlatButton(
+                    TextButton(
                       child: const Text('Delete'),
-                      textColor: Colors.red,
+                      style: ButtonStyle(
+                        foregroundColor: MaterialStateProperty.all(Colors.red),
+                      ),
                       onPressed: () {
                         Navigator.pop(context, true);
                       },

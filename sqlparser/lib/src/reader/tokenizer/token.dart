@@ -113,6 +113,7 @@ enum TokenType {
   like,
   limit,
   match,
+  materialized,
   minus,
   more,
   moreEqual,
@@ -150,6 +151,7 @@ enum TokenType {
   release,
   rename,
   replace,
+  returning,
   restrict,
   right,
   rightParen,
@@ -165,6 +167,7 @@ enum TokenType {
   shiftRight,
   slash,
   star,
+  strict,
   stringLiteral,
   table,
   temp,
@@ -193,6 +196,7 @@ enum TokenType {
   inlineDart,
   import,
   json,
+  required,
 
   /// A `**` token. This is only scanned when scanning for moor tokens.
   doubleStar,
@@ -285,6 +289,7 @@ const Map<String, TokenType> keywords = {
   'LIKE': TokenType.like,
   'LIMIT': TokenType.limit,
   'MATCH': TokenType.match,
+  'MATERIALIZED': TokenType.materialized,
   'NATURAL': TokenType.natural,
   'NO': TokenType.no,
   'NOT': TokenType.not,
@@ -316,6 +321,7 @@ const Map<String, TokenType> keywords = {
   'RENAME': TokenType.rename,
   'REPLACE': TokenType.replace,
   'RIGHT': TokenType.right,
+  'RETURNING': TokenType.returning,
   'RESTRICT': TokenType.restrict,
   'ROLLBACK': TokenType.rollback,
   'ROW': TokenType.row,
@@ -324,6 +330,7 @@ const Map<String, TokenType> keywords = {
   'SAVEPOINT': TokenType.savepoint,
   'SELECT': TokenType.select,
   'SET': TokenType.set,
+  'STRICT': TokenType.strict,
   'TABLE': TokenType.table,
   'TEMP': TokenType.temp,
   'TEMPORARY': TokenType.temporary,
@@ -359,6 +366,7 @@ const Map<String, TokenType> moorKeywords = {
   'IMPORT': TokenType.import,
   'JSON': TokenType.json,
   'MAPPED': TokenType.mapped,
+  'REQUIRED': TokenType.required,
 };
 
 /// A set of [TokenType]s that can be parsed as an identifier.
@@ -578,7 +586,9 @@ class NumericToken extends Token {
   String toString() {
     final buffer = StringBuffer();
     if (hexDigits != null) {
-      buffer..write('0x')..write(hexDigits);
+      buffer
+        ..write('0x')
+        ..write(hexDigits);
     } else {
       if (digitsBeforeDecimal != null) {
         buffer.write(digitsBeforeDecimal);
@@ -591,7 +601,9 @@ class NumericToken extends Token {
       }
 
       if (exponent != null) {
-        buffer..write('E')..write(exponent);
+        buffer
+          ..write('E')
+          ..write(exponent);
       }
     }
 

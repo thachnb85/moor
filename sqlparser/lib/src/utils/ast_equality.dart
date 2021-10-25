@@ -1,6 +1,25 @@
 import 'package:collection/collection.dart';
 import 'package:sqlparser/src/ast/ast.dart';
 
+/// Checks whether [a] and [b] are equal. If they aren't, throws an exception.
+void enforceEqual(AstNode a, AstNode b) {
+  EqualityEnforcingVisitor(a).visit(b, null);
+}
+
+void enforceEqualIterable(Iterable<AstNode> a, Iterable<AstNode> b) {
+  final childrenA = a.iterator;
+  final childrenB = b.iterator;
+
+  // always move both iterators
+  while (childrenA.moveNext() & childrenB.moveNext()) {
+    enforceEqual(childrenA.current, childrenB.current);
+  }
+
+  if (childrenA.moveNext() || childrenB.moveNext()) {
+    throw ArgumentError("$a and $b don't have an equal amount of children");
+  }
+}
+
 /// Visitor enforcing the equality of two ast nodes.
 class EqualityEnforcingVisitor implements AstVisitor<void, void> {
   // The current ast node. Visitor methods will compare the node they receive to
@@ -19,56 +38,17 @@ class EqualityEnforcingVisitor implements AstVisitor<void, void> {
   EqualityEnforcingVisitor(this._current, {bool considerChildren = true})
       : _considerChildren = considerChildren;
 
-  void _check(AstNode? childOfCurrent, AstNode? childOfOther) {
-    if (identical(childOfCurrent, childOfOther)) return;
-
-    if ((childOfCurrent == null) != (childOfOther == null)) {
-      throw NotEqualException('$childOfCurrent and $childOfOther');
-    }
-
-    // Both non nullable here
-    final savedCurrent = _current;
-    _current = childOfCurrent!;
-    visit(childOfOther!, null);
-    _current = savedCurrent;
-  }
-
-  void _checkChildren(AstNode other) {
-    if (!_considerChildren) return;
-
-    final currentChildren = _current.childNodes.iterator;
-    final otherChildren = other.childNodes.iterator;
-
-    // always move both iterators
-    while (currentChildren.moveNext() & otherChildren.moveNext()) {
-      _check(currentChildren.current, otherChildren.current);
-    }
-
-    if (currentChildren.moveNext() || otherChildren.moveNext()) {
-      throw NotEqualException(
-          "$_current and $other don't have an equal amount of children");
-    }
-  }
-
-  Never _notEqual(AstNode other) {
-    throw NotEqualException('$_current and $other');
-  }
-
-  T _currentAs<T extends AstNode>(T context) {
-    final current = _current;
-    if (current is T) return current;
-
-    _notEqual(context);
-  }
-
-  void _assert(bool contentEqual, AstNode context) {
-    if (!contentEqual) _notEqual(context);
-  }
-
   @override
   void visitAggregateExpression(AggregateExpression e, void arg) {
     final current = _currentAs<AggregateExpression>(e);
     _assert(current.name == e.name && current.windowName == e.windowName, e);
+    _checkChildren(e);
+  }
+
+  @override
+  void visitBeginTransaction(BeginTransactionStatement e, void arg) {
+    final current = _currentAs<BeginTransactionStatement>(e);
+    _assert(current.mode == e.mode, e);
     _checkChildren(e);
   }
 
@@ -160,9 +140,19 @@ class EqualityEnforcingVisitor implements AstVisitor<void, void> {
   }
 
   @override
+  void visitCommitStatement(CommitStatement e, void arg) {
+    _currentAs<CommitStatement>(e);
+    _checkChildren(e);
+  }
+
+  @override
   void visitCommonTableExpression(CommonTableExpression e, void arg) {
     final current = _currentAs<CommonTableExpression>(e);
     _assert(current.cteTableName == e.cteTableName, e);
+    _assert(current.materializationHint == e.materializationHint, e);
+    _assert(
+        const ListEquality().equals(current.columnNames, current.columnNames),
+        e);
     _checkChildren(e);
   }
 
@@ -197,7 +187,7 @@ class EqualityEnforcingVisitor implements AstVisitor<void, void> {
         current.ifNotExists == e.ifNotExists &&
             current.tableName == e.tableName &&
             current.withoutRowId == e.withoutRowId &&
-            current.overriddenDataClassName == e.overriddenDataClassName,
+            current.isStrict == e.isStrict,
         e);
     _checkChildren(e);
   }
@@ -238,7 +228,6 @@ class EqualityEnforcingVisitor implements AstVisitor<void, void> {
     _checkChildren(e);
   }
 
-  @override
   void visitDartPlaceholder(DartPlaceholder e, void arg) {
     final current = _currentAs<DartPlaceholder>(e);
     _assert(current.name == e.name && current.runtimeType == e.runtimeType, e);
@@ -339,16 +328,16 @@ class EqualityEnforcingVisitor implements AstVisitor<void, void> {
   }
 
   @override
-  void visitInExpression(InExpression e, void arg) {
-    final current = _currentAs<InExpression>(e);
-    _assert(current.not == e.not, e);
+  void visitIndexedColumn(IndexedColumn e, void arg) {
+    final current = _currentAs<IndexedColumn>(e);
+    _assert(current.ordering == e.ordering, e);
     _checkChildren(e);
   }
 
   @override
-  void visitIndexedColumn(IndexedColumn e, void arg) {
-    final current = _currentAs<IndexedColumn>(e);
-    _assert(current.ordering == e.ordering, e);
+  void visitInExpression(InExpression e, void arg) {
+    final current = _currentAs<InExpression>(e);
+    _assert(current.not == e.not, e);
     _checkChildren(e);
   }
 
@@ -423,27 +412,23 @@ class EqualityEnforcingVisitor implements AstVisitor<void, void> {
     _checkChildren(e);
   }
 
-  @override
   void visitMoorDeclaredStatement(DeclaredStatement e, void arg) {
     final current = _currentAs<DeclaredStatement>(e);
     _assert(current.identifier == e.identifier && current.as == e.as, e);
     _checkChildren(e);
   }
 
-  @override
   void visitMoorFile(MoorFile e, void arg) {
     _currentAs<MoorFile>(e);
     _checkChildren(e);
   }
 
-  @override
   void visitMoorImportStatement(ImportStatement e, void arg) {
     final current = _currentAs<ImportStatement>(e);
     _assert(current.importedFile == e.importedFile, e);
     _checkChildren(e);
   }
 
-  @override
   void visitMoorNestedStarResultColumn(NestedStarResultColumn e, void arg) {
     final current = _currentAs<NestedStarResultColumn>(e);
     _assert(current.tableName == e.tableName, e);
@@ -451,16 +436,46 @@ class EqualityEnforcingVisitor implements AstVisitor<void, void> {
   }
 
   @override
+  void visitMoorSpecificNode(MoorSpecificNode e, void arg) {
+    if (e is DartPlaceholder) {
+      return visitDartPlaceholder(e, arg);
+    } else if (e is DeclaredStatement) {
+      return visitMoorDeclaredStatement(e, arg);
+    } else if (e is MoorFile) {
+      return visitMoorFile(e, arg);
+    } else if (e is ImportStatement) {
+      return visitMoorImportStatement(e, arg);
+    } else if (e is NestedStarResultColumn) {
+      return visitMoorNestedStarResultColumn(e, arg);
+    } else if (e is StatementParameter) {
+      return visitMoorStatementParameter(e, arg);
+    } else if (e is MoorTableName) {
+      return visitMoorTableName(e, arg);
+    }
+  }
+
   void visitMoorStatementParameter(StatementParameter e, void arg) {
     if (e is VariableTypeHint) {
       final current = _currentAs<VariableTypeHint>(e);
-      _assert(current.typeName == e.typeName && current.orNull == e.orNull, e);
+      _assert(
+          current.typeName == e.typeName &&
+              current.orNull == e.orNull &&
+              current.isRequired == e.isRequired,
+          e);
     } else if (e is DartPlaceholderDefaultValue) {
       final current = _currentAs<DartPlaceholderDefaultValue>(e);
       _assert(current.variableName == e.variableName, e);
     }
 
     _checkChildren(e);
+  }
+
+  void visitMoorTableName(MoorTableName e, void arg) {
+    final current = _currentAs<MoorTableName>(e);
+    _assert(
+        current.overriddenDataClassName == e.overriddenDataClassName &&
+            current.useExistingDartClass == e.useExistingDartClass,
+        e);
   }
 
   @override
@@ -511,12 +526,30 @@ class EqualityEnforcingVisitor implements AstVisitor<void, void> {
   }
 
   @override
+  void visitRaiseExpression(RaiseExpression e, void arg) {
+    final current = _currentAs<RaiseExpression>(e);
+    _assert(
+      current.raiseKind == e.raiseKind &&
+          current.errorMessage == e.errorMessage,
+      e,
+    );
+    _checkChildren(e);
+  }
+
+  @override
   void visitReference(Reference e, void arg) {
     final current = _currentAs<Reference>(e);
     _assert(
-        current.entityName == e.entityName &&
+        current.schemaName == e.schemaName &&
+            current.entityName == e.entityName &&
             current.columnName == e.columnName,
         e);
+    _checkChildren(e);
+  }
+
+  @override
+  void visitReturning(Returning e, void arg) {
+    _currentAs<Returning>(e);
     _checkChildren(e);
   }
 
@@ -589,7 +622,11 @@ class EqualityEnforcingVisitor implements AstVisitor<void, void> {
   @override
   void visitTableReference(TableReference e, void arg) {
     final current = _currentAs<TableReference>(e);
-    _assert(current.tableName == e.tableName && current.as == e.as, e);
+    _assert(
+        current.schemaName == e.schemaName &&
+            current.tableName == e.tableName &&
+            current.as == e.as,
+        e);
     _checkChildren(e);
   }
 
@@ -640,6 +677,12 @@ class EqualityEnforcingVisitor implements AstVisitor<void, void> {
   }
 
   @override
+  void visitUpsertClauseEntry(UpsertClauseEntry e, void arg) {
+    _currentAs<UpsertClauseEntry>(e);
+    _checkChildren(e);
+  }
+
+  @override
   void visitValuesSelectStatement(ValuesSelectStatement e, void arg) {
     _currentAs<ValuesSelectStatement>(e);
     _checkChildren(e);
@@ -670,11 +713,58 @@ class EqualityEnforcingVisitor implements AstVisitor<void, void> {
     _assert(current.recursive == e.recursive, e);
     _checkChildren(e);
   }
-}
 
-/// Checks whether [a] and [b] are equal. If they aren't, throws an exception.
-void enforceEqual(AstNode a, AstNode b) {
-  EqualityEnforcingVisitor(a).visit(b, null);
+  void _assert(bool contentEqual, AstNode context) {
+    if (!contentEqual) _notEqual(context);
+  }
+
+  void _check(AstNode? childOfCurrent, AstNode? childOfOther) {
+    if (identical(childOfCurrent, childOfOther)) return;
+
+    if ((childOfCurrent == null) != (childOfOther == null)) {
+      throw NotEqualException('$childOfCurrent and $childOfOther');
+    }
+
+    // Both non nullable here
+    final savedCurrent = _current;
+    _current = childOfCurrent!;
+    visit(childOfOther!, null);
+    _current = savedCurrent;
+  }
+
+  void _checkChildren(AstNode other) {
+    if (!_considerChildren) return;
+
+    final currentChildren = _current.childNodes.iterator;
+    final otherChildren = other.childNodes.iterator;
+
+    while (currentChildren.moveNext()) {
+      if (otherChildren.moveNext()) {
+        _check(currentChildren.current, otherChildren.current);
+      } else {
+        // Current has more elements than other
+        throw NotEqualException(
+            "$_current and $other don't have an equal amount of children");
+      }
+    }
+
+    if (otherChildren.moveNext()) {
+      // Other has more elements than current
+      throw NotEqualException(
+          "$_current and $other don't have an equal amount of children");
+    }
+  }
+
+  T _currentAs<T extends AstNode>(T context) {
+    final current = _current;
+    if (current is T) return current;
+
+    _notEqual(context);
+  }
+
+  Never _notEqual(AstNode other) {
+    throw NotEqualException('$_current and $other');
+  }
 }
 
 /// Thrown by the [EqualityEnforcingVisitor] when two nodes were determined to
@@ -687,19 +777,5 @@ class NotEqualException implements Exception {
   @override
   String toString() {
     return 'Not equal: $message';
-  }
-}
-
-void enforceEqualIterable(Iterable<AstNode> a, Iterable<AstNode> b) {
-  final childrenA = a.iterator;
-  final childrenB = b.iterator;
-
-  // always move both iterators
-  while (childrenA.moveNext() & childrenB.moveNext()) {
-    enforceEqual(childrenA.current, childrenB.current);
-  }
-
-  if (childrenA.moveNext() || childrenB.moveNext()) {
-    throw ArgumentError("$a and $b don't have an equal amount of children");
   }
 }

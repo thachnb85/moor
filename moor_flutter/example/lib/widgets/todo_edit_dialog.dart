@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:moor_example/bloc.dart';
 import 'package:moor_example/database/database.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 final _dateFormat = DateFormat.yMMMd();
@@ -9,7 +9,7 @@ final _dateFormat = DateFormat.yMMMd();
 class TodoEditDialog extends StatefulWidget {
   final TodoEntry entry;
 
-  const TodoEditDialog({Key key, this.entry}) : super(key: key);
+  const TodoEditDialog({Key? key, required this.entry}) : super(key: key);
 
   @override
   _TodoEditDialogState createState() => _TodoEditDialogState();
@@ -17,7 +17,7 @@ class TodoEditDialog extends StatefulWidget {
 
 class _TodoEditDialogState extends State<TodoEditDialog> {
   final TextEditingController textController = TextEditingController();
-  DateTime _dueDate;
+  DateTime? _dueDate;
 
   @override
   void initState() {
@@ -36,7 +36,7 @@ class _TodoEditDialogState extends State<TodoEditDialog> {
   Widget build(BuildContext context) {
     var formattedDate = 'No date set';
     if (_dueDate != null) {
-      formattedDate = _dateFormat.format(_dueDate);
+      formattedDate = _dateFormat.format(_dueDate!);
     }
 
     return AlertDialog(
@@ -80,14 +80,18 @@ class _TodoEditDialogState extends State<TodoEditDialog> {
         ],
       ),
       actions: [
-        FlatButton(
+        TextButton(
           child: const Text('Cancel'),
-          textColor: Colors.black,
+          style: ButtonStyle(
+            textStyle: MaterialStateProperty.all(
+              const TextStyle(color: Colors.black),
+            ),
+          ),
           onPressed: () {
             Navigator.pop(context);
           },
         ),
-        FlatButton(
+        TextButton(
           child: const Text('Save'),
           onPressed: () {
             final updatedContent = textController.text;
@@ -96,7 +100,7 @@ class _TodoEditDialogState extends State<TodoEditDialog> {
               targetDate: _dueDate,
             );
 
-            Provider.of<TodoAppBloc>(context).updateEntry(entry);
+            Provider.of<TodoAppBloc>(context, listen: false).updateEntry(entry);
             Navigator.pop(context);
           },
         ),

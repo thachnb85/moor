@@ -1,12 +1,15 @@
 @TestOn('browser')
 import 'dart:html';
 
-import 'package:tests/tests.dart';
-import 'package:test/test.dart';
 import 'package:moor/moor_web.dart';
+import 'package:test/test.dart';
+import 'package:tests/tests.dart';
 
 class WebExecutor extends TestExecutor {
   final String name = 'db';
+
+  @override
+  bool get supportsReturning => true;
 
   @override
   DatabaseConnection createConnection() {
@@ -21,6 +24,9 @@ class WebExecutor extends TestExecutor {
 }
 
 class WebExecutorIndexedDb extends TestExecutor {
+  @override
+  bool get supportsReturning => true;
+
   @override
   DatabaseConnection createConnection() {
     return DatabaseConnection.fromExecutor(

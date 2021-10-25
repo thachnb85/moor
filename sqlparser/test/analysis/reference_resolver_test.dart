@@ -1,6 +1,6 @@
+import 'package:sqlparser/sqlparser.dart';
 import 'package:sqlparser/src/utils/ast_equality.dart';
 import 'package:test/test.dart';
-import 'package:sqlparser/sqlparser.dart';
 
 import '../parser/utils.dart';
 import 'data.dart';
@@ -33,9 +33,10 @@ void main() {
     final secondColumn = select.columns[1] as ExpressionResultColumn;
     final from = select.from as TableReference;
 
-    expect((firstColumn.expression as Reference).resolved, id);
-    expect((secondColumn.expression as Reference).resolved, content);
-    expect(from.resolved, demoTable);
+    expect((firstColumn.expression as Reference).resolvedColumn?.source, id);
+    expect(
+        (secondColumn.expression as Reference).resolvedColumn?.source, content);
+    expect(from.resultSet?.unalias(), demoTable);
 
     final where = select.where as BinaryExpression;
     expect((where.left as Reference).resolved, id);
@@ -177,5 +178,122 @@ SELECT row_number() OVER wnd FROM demo
         ),
       ),
     );
+  });
+
+  test('warns about ambigious references', () {
+    final engine = SqlEngine()..registerTable(demoTable);
+
+    final context =
+        engine.analyze('SELECT id FROM demo, (SELECT id FROM demo) AS a');
+    expect(context.errors, hasLength(1));
+    expect(
+      context.errors.single,
+      isA<AnalysisError>()
+          .having((e) => e.type, 'type', AnalysisErrorType.ambiguousReference)
+          .having((e) => e.span?.text, 'span.text', 'id'),
+    );
+  });
+
+  test("does not allow columns from tables that haven't been added", () {
+    final engine = SqlEngine()..registerTable(demoTable);
+
+    final context = engine.analyze('SELECT demo.id;');
+    expect(context.errors, hasLength(1));
+    expect(
+        context.errors.single,
+        isA<AnalysisError>()
+            .having(
+                (e) => e.type, 'type', AnalysisErrorType.referencedUnknownTable)
+            .having((e) => e.span?.text, 'span.text', 'demo.id'));
+  });
+
+  group('nullability for references from outer join', () {
+    final engine = SqlEngine()
+      ..registerTableFromSql('''
+      CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY
+      );
+    ''')
+      ..registerTableFromSql('''
+      CREATE TABLE messages (
+        sender INTEGER NOT NULL
+      );
+    ''');
+
+    void testWith(String sql) {
+      final context = engine.analyze(sql);
+
+      expect(context.errors, isEmpty);
+      final columns = (context.root as SelectStatement).resolvedColumns!;
+
+      expect(columns.map((e) => e.name), ['sender', 'id']);
+      expect(context.typeOf(columns[0]).nullable, isFalse);
+      expect(context.typeOf(columns[1]).nullable, isTrue);
+    }
+
+    test('unaliased columns, unaliased tables', () {
+      testWith('SELECT sender, id FROM messages '
+          'LEFT JOIN users ON id = sender');
+    });
+
+    test('unaliased columns, aliased tables', () {
+      testWith('SELECT sender, id FROM messages m '
+          'LEFT JOIN users u ON id = sender');
+    });
+
+    test('aliased columns, unaliased tables', () {
+      testWith('SELECT messages.sender, users.id FROM messages '
+          'LEFT JOIN users ON id = sender');
+    });
+
+    test('aliased columns, aliased tables', () {
+      testWith('SELECT m.*, u.* FROM messages m '
+          'LEFT JOIN users u ON u.id = m.sender');
+    });
+
+    test('single star, aliased tables', () {
+      testWith('SELECT * FROM messages m '
+          'LEFT JOIN users u ON u.id = m.sender');
+    });
+
+    test('single star, unaliased tables', () {
+      testWith('SELECT * FROM messages '
+          'LEFT JOIN users ON id = sender');
+    });
+  });
+
+  group('join analysis keeps column non-nullable', () {
+    void testWith(String sql) {
+      final engine = SqlEngine(EngineOptions(version: SqliteVersion.v3_35))
+        ..registerTableFromSql('''
+      CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY
+      );
+    ''');
+
+      final result = engine.analyze(sql);
+      expect(result.errors, isEmpty);
+
+      final root = result.root as StatementReturningColumns;
+
+      expect(
+        root.returnedResultSet!.resolvedColumns!
+            .map((e) => result.typeOf(e).type),
+        everyElement(
+            isA<ResolvedType>().having((e) => e.nullable, 'nullable', isFalse)),
+      );
+    }
+
+    test('for reference to table in INSERT', () {
+      testWith('INSERT INTO users VALUES (?) RETURNING id;');
+    });
+
+    test('for reference to table in UPDATE', () {
+      testWith('UPDATE users SET id = id + 1 RETURNING id;');
+    });
+
+    test('for reference to table in DELETE', () {
+      testWith('DELETE FROM users RETURNING id;');
+    });
   });
 }

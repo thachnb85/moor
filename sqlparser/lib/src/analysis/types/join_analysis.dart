@@ -1,5 +1,5 @@
-import 'package:sqlparser/src/analysis/analysis.dart';
-import 'package:sqlparser/src/ast/ast.dart';
+import '../../ast/ast.dart';
+import '../analysis.dart';
 
 /// Tracks table references that must be non-nullable in a query row.
 ///
@@ -31,48 +31,91 @@ import 'package:sqlparser/src/ast/ast.dart';
 ///
 /// In the future, we'll also consider foreign key constraints.
 class JoinModel {
-  final List<ResolvesToResultSet> nonNullable;
+  final List<ResultSetAvailableInStatement> nonNullable;
 
   JoinModel._(this.nonNullable);
 
-  factory JoinModel._resolve(SelectStatement statement) {
+  factory JoinModel._resolve(AstNode statement) {
     final visitor = _FindNonNullableJoins();
-    visitor.visitSelectStatement(statement, true);
+    statement.accept(visitor, true);
 
     return JoinModel._(visitor.nonNullable);
   }
 
   static JoinModel? of(AstNode node) {
-    final enclosingSelect = node.enclosingOfType<SelectStatement>();
-    if (enclosingSelect == null) return null;
+    final enclosingStatement = node.enclosingOfType<CrudStatement>();
+    if (enclosingStatement == null) return null;
 
-    final existing = enclosingSelect.meta<JoinModel>();
+    final existing = enclosingStatement.meta<JoinModel>();
     if (existing != null) return existing;
 
-    final created = JoinModel._resolve(enclosingSelect);
-    enclosingSelect.setMeta(created);
+    final created = JoinModel._resolve(enclosingStatement);
+    enclosingStatement.setMeta(created);
     return created;
   }
 
-  /// Checks whether the column comes from a nullable table.
-  bool isFromNullableTable(Column column) {
-    final resultSet = column.containingSet;
-    if (resultSet == null) return false;
+  /// Computes whether the element the [reference] is pointing to is nullable
+  /// from the perspective of this join model.
+  ///
+  /// This does not include the computed nullability of what the reference is
+  /// referring to, just whether the reference points to a table that may not
+  /// be present because it comes from an outer join.
+  bool? referenceIsNullable(Reference reference) {
+    final resolved = reference.resolvedColumn;
+    if (resolved is AvailableColumn) {
+      return availableColumnIsNullable(resolved);
+    }
 
+    final resultSet = reference.resultEntity;
+    // ignore: avoid_returning_null
+    if (resultSet == null) return null;
+
+    return !nonNullable.contains(resultSet);
+  }
+
+  /// Returns whether an [AvailableColumn] is nullable from the perspective of
+  /// this join model by checking whether it comes from an outer join.
+  bool availableColumnIsNullable(AvailableColumn column) {
+    return !nonNullable.contains(column.source);
+  }
+
+  /// Checks whether the result set is nullable in the surrounding select
+  /// statement.
+  bool isNullableTable(ResultSet resultSet) {
     return nonNullable.every((nonNullableRef) {
-      return nonNullableRef.resultSet != column.containingSet;
+      return nonNullableRef.resultSet.resultSet != resultSet;
     });
   }
 }
 
+// The boolean arg indicates whether a visited queryable is needed for the
+// result to have any rows (which, in particular, mean's its non-nullable)
 class _FindNonNullableJoins extends RecursiveVisitor<bool, void> {
-  final List<ResolvesToResultSet> nonNullable = [];
+  final List<ResultSetAvailableInStatement> nonNullable = [];
 
-  // The boolean arg indicates whether a visited queryable is needed for the
-  // result to have any rows (which, in particular, mean's its non-nullable)
+  void _addIfMakesResultStatementAvailable(TableOrSubquery node) {
+    final resultSet = node.availableResultSet;
+    if (resultSet != null) nonNullable.add(resultSet);
+  }
 
   @override
   void visitSelectStatement(SelectStatement e, bool arg) {
+    visitNullable(e.from, true);
+  }
+
+  @override
+  void visitDeleteStatement(DeleteStatement e, bool arg) {
+    visit(e.table, true);
+  }
+
+  @override
+  void visitInsertStatement(InsertStatement e, bool arg) {
+    visit(e.table, true);
+  }
+
+  @override
+  void visitUpdateStatement(UpdateStatement e, bool arg) {
+    visit(e.table, true);
     visitNullable(e.from, true);
   }
 
@@ -91,11 +134,16 @@ class _FindNonNullableJoins extends RecursiveVisitor<bool, void> {
 
   @override
   void visitTableReference(TableReference e, bool arg) {
-    if (arg) nonNullable.add(e);
+    if (arg) _addIfMakesResultStatementAvailable(e);
   }
 
   @override
   void visitSelectStatementAsSource(SelectStatementAsSource e, bool arg) {
-    if (arg) nonNullable.add(e.statement);
+    if (arg) _addIfMakesResultStatementAvailable(e);
+  }
+
+  @override
+  void visitTableValuedFunction(TableValuedFunction e, bool arg) {
+    if (arg) _addIfMakesResultStatementAvailable(e);
   }
 }

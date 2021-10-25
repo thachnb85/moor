@@ -1,4 +1,9 @@
-part of '../ast.dart';
+import 'package:meta/meta.dart';
+
+import '../../analysis/analysis.dart';
+import '../../reader/tokenizer/token.dart';
+import '../ast.dart'; // todo: Remove this import
+import '../node.dart';
 
 abstract class Statement extends AstNode {
   Token? semicolon;
@@ -9,7 +14,8 @@ abstract class Statement extends AstNode {
 abstract class CrudStatement extends Statement {
   WithClause? withClause;
 
-  CrudStatement._(this.withClause);
+  @internal
+  CrudStatement(this.withClause);
 }
 
 /// Interfaces for statements that have a primary source table on which they
@@ -24,9 +30,30 @@ abstract class HasPrimarySource extends Statement {
   Queryable? get table;
 }
 
+/// Interfaces for statements that have a `FROM` clause.
+///
+/// This includes selects and, since recently, updates.
+abstract class HasFrom extends Statement {
+  /// The table, join clause or subquery appearing in the `FROM` clause.
+  Queryable? get from;
+}
+
 /// Interface for statements that have a primary where clause (select, update,
 /// delete).
 abstract class StatementWithWhere extends Statement implements HasWhereClause {}
+
+/// Interface for statements that can return columns after writing data.
+///
+/// Columns are returned with a `RETURNING` clause (see [Returning]). After
+/// analyzing a node, statements with a [returning] clause will have their
+/// [returnedResultSet] set to the resolved columns.
+abstract class StatementReturningColumns extends Statement {
+  /// The returning clause of this statement, if there is any.
+  Returning? get returning;
+
+  /// The result set of the [returning] clause.
+  ResultSet? returnedResultSet;
+}
 
 /// Marker interface for statements that change the table structure.
 abstract class SchemaStatement extends Statement implements PartOfMoorFile {}

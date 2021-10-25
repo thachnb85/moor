@@ -1,0 +1,47 @@
+name: moor_documentation
+description: Documentation of the moor packages
+publish_to: none
+
+environment:
+  sdk: '>=2.12.0 <3.0.0'
+
+dependencies:
+  docsy:
+    hosted:
+      url: https://simonbinder.eu
+      name: docsy
+    version: ^0.2.0
+
+dev_dependencies:
+  build: ^2.1.0
+  build_runner: ^2.0.5
+  build_web_compilers: ^3.2.0
+  built_site:
+    hosted:
+      url: https://simonbinder.eu
+      name: built_site
+    version: ^0.2.3
+
+  moor:
+  moor_generator:
+  sqlparser:
+  drift:
+  drift_dev:
+
+dependency_overrides:
+  moor:
+    path: ../moor
+  moor_generator:
+    path: ../moor_generator
+  drift:
+    path: ../drift
+  drift_dev:
+    path: ../drift_dev
+  sqlparser:
+    path: ../sqlparser
+
+  # todo: Remove after https://github.com/dart-lang/mime/pull/43
+  mime:
+    git:
+      url: https://github.com/simolus3/mime.git
+      ref: woff2

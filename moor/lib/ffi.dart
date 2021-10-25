@@ -5,9 +5,15 @@
 /// `sqlite3_flutter_libs` package to ship the latest sqlite3 version with your
 /// app.
 /// For more information other platforms, see [other engines](https://moor.simonbinder.eu/docs/other-engines/vm/).
+@moorDeprecated
 library moor.ffi;
 
-import 'package:moor/src/ffi/vm_database.dart';
+import 'package:drift/native.dart';
+import 'package:moor/src/deprecated.dart';
 
-export 'package:sqlite3/sqlite3.dart' show SqliteException;
-export 'src/ffi/vm_database.dart';
+export 'package:drift/native.dart' hide NativeDatabase;
+
+/// A moor database implementation based on `dart:ffi`, running directly in a
+/// Dart VM or an AOT compiled Dart/Flutter application.
+@pragma('moor2drift', 'NativeDatabase')
+typedef VmDatabase = NativeDatabase;

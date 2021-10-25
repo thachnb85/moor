@@ -48,6 +48,7 @@ class _Fts5Table extends Table {
             _Fts5TableColumn(name),
           ],
           definition: definition,
+          isVirtual: true,
         );
 }
 
@@ -146,7 +147,7 @@ class _Fts5Functions with ArgumentCountLinter implements FunctionHandler {
     }
 
     // the first argument to all functions must be a fts5 table name
-    if (firstResolved == null || firstResolved is! _Fts5TableColumn) {
+    if (firstResolved == null || firstResolved.source is! _Fts5TableColumn) {
       context.reportError(AnalysisError(
         relevantNode: args.first,
         message: 'Expected an fts5 table name here',
@@ -164,7 +165,8 @@ class _Fts5RankColumn extends TableColumn {
   @override
   bool get includedInResults => false;
 
-  _Fts5RankColumn() : super('rank', const ResolvedType(type: BasicType.int));
+  _Fts5RankColumn()
+      : super('rank', const ResolvedType(type: BasicType.real, nullable: true));
 }
 
 /// A column that has the same name as the fts5 it's from. We introduce this

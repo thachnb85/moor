@@ -74,7 +74,9 @@ class TypeResolver extends RecursiveVisitor<TypeExpectation, void> {
     visitList(e.targetColumns, const NoTypeExpectation());
 
     final targets = e.resolvedTargetColumns ?? const [];
-    targets.forEach(_handleColumn);
+    for (final column in targets) {
+      _handleColumn(column, e);
+    }
 
     final expectations = targets.map((r) {
       if (session.graph.knowsType(r)) {
@@ -83,26 +85,9 @@ class TypeResolver extends RecursiveVisitor<TypeExpectation, void> {
       return const NoTypeExpectation();
     }).toList();
 
-    e.source.when(
-      isSelect: (select) {
-        visit(select.stmt, SelectTypeExpectation(expectations));
-      },
-      isValues: (values) {
-        // todo: It would be nice to remove this special case. Can we generalize
-        // the SelectTypeExpectation so that it works for tuples and just visit
-        // e.source?
-        for (final tuple in values.values) {
-          for (var i = 0; i < tuple.expressions.length; i++) {
-            final expectation = i < expectations.length
-                ? expectations[i]
-                : const NoTypeExpectation();
-            visit(tuple.expressions[i], expectation);
-          }
-        }
-      },
-    );
-
+    visit(e.source, SelectTypeExpectation(expectations));
     visitNullable(e.upsert, const NoTypeExpectation());
+    visitNullable(e.returning, const NoTypeExpectation());
   }
 
   @override
@@ -187,11 +172,11 @@ class TypeResolver extends RecursiveVisitor<TypeExpectation, void> {
   }
 
   @override
-  void visitDartPlaceholder(DartPlaceholder e, TypeExpectation arg) {
+  void visitMoorSpecificNode(MoorSpecificNode e, TypeExpectation arg) {
     if (e is DartExpressionPlaceholder) {
       _inferAsVariable(e, arg);
     } else {
-      super.visitDartPlaceholder(e, arg);
+      super.visitMoorSpecificNode(e, arg);
     }
   }
 
@@ -255,12 +240,25 @@ class TypeResolver extends RecursiveVisitor<TypeExpectation, void> {
 
   @override
   void visitTuple(Tuple e, TypeExpectation arg) {
-    final expectationForChildren = arg.clearArray();
-    visitChildren(e, expectationForChildren);
+    if (arg is SelectTypeExpectation) {
+      // We have a specific type requirement for each entry, let's use that
+      final expectations = arg.columnExpectations;
+      for (var i = 0; i < e.expressions.length; i++) {
+        final expectation = i < expectations.length
+            ? expectations[i]
+            : const NoTypeExpectation();
+        visit(e.expressions[i], expectation);
+      }
+    } else {
+      // Assume that this tuple forms an array, and clear the array expectation
+      // for children.
+      final expectationForChildren = arg.clearArray();
+      visitChildren(e, expectationForChildren);
 
-    // make children non-arrays
-    for (final child in e.childNodes) {
-      session._addRelation(CopyTypeFrom(child, e, array: false));
+      // make children non-arrays
+      for (final child in e.childNodes) {
+        session._addRelation(CopyTypeFrom(child, e, array: false));
+      }
     }
   }
 
@@ -432,10 +430,8 @@ class TypeResolver extends RecursiveVisitor<TypeExpectation, void> {
     final resolved = e.resolvedColumn;
     if (resolved == null) return;
 
-    _handleColumn(resolved);
-
-    final isNullable = JoinModel.of(e)?.isFromNullableTable(resolved) ?? false;
-    _lazyCopy(e, resolved, makeNullable: isNullable);
+    _handleColumn(resolved, e);
+    _lazyCopy(e, resolved);
   }
 
   @override
@@ -536,7 +532,8 @@ class TypeResolver extends RecursiveVisitor<TypeExpectation, void> {
         return null;
       case 'coalesce':
       case 'ifnull':
-        session._addRelation(CopyEncapsulating(e, params));
+        session._addRelation(CopyEncapsulating(
+            e, params, null, EncapsulatingNullability.nullIfAll));
         for (final param in params) {
           session._addRelation(DefaultType(param, isNullable: true));
         }
@@ -606,7 +603,7 @@ class TypeResolver extends RecursiveVisitor<TypeExpectation, void> {
   }
 
   @override
-  void visitUpsertClause(UpsertClause e, TypeExpectation arg) {
+  void visitUpsertClauseEntry(UpsertClauseEntry e, TypeExpectation arg) {
     _handleWhereClause(e);
     visitExcept(e, e.where, arg);
   }
@@ -617,7 +614,7 @@ class TypeResolver extends RecursiveVisitor<TypeExpectation, void> {
     visitExcept(e, e.where, arg);
   }
 
-  void _handleColumn(Column? column) {
+  void _handleColumn(Column? column, [AstNode? context]) {
     if (session.graph.knowsType(column) || _handledColumns.contains(column)) {
       return;
     }
@@ -634,7 +631,17 @@ class TypeResolver extends RecursiveVisitor<TypeExpectation, void> {
       session._addRelation(CopyEncapsulating(column, column.expressions));
     } else if (column is DelegatedColumn && column.innerColumn != null) {
       _handleColumn(column.innerColumn);
-      _lazyCopy(column, column.innerColumn);
+
+      if (column is AvailableColumn) {
+        // The nullability depends on whether the column was introduced in an
+        // outer join.
+        final model = context != null ? JoinModel.of(context) : null;
+        final isNullable =
+            model == null || model.availableColumnIsNullable(column);
+        _lazyCopy(column, column.innerColumn, makeNullable: isNullable);
+      } else {
+        _lazyCopy(column, column.innerColumn);
+      }
     }
   }
 
@@ -673,9 +680,39 @@ class _ResultColumnVisitor extends RecursiveVisitor<void, void> {
   @override
   void visitBaseSelectStatement(BaseSelectStatement stmt, void arg) {
     if (stmt.resolvedColumns != null) {
-      stmt.resolvedColumns!.forEach(resolver._handleColumn);
+      for (final column in stmt.resolvedColumns!) {
+        resolver._handleColumn(column, stmt);
+      }
     }
 
     visitChildren(stmt, arg);
+  }
+
+  void _handleReturning(StatementReturningColumns stmt) {
+    final columns = stmt.returnedResultSet?.resolvedColumns;
+
+    if (columns != null) {
+      for (final column in columns) {
+        resolver._handleColumn(column, stmt);
+      }
+    }
+  }
+
+  @override
+  void visitInsertStatement(InsertStatement e, void arg) {
+    _handleReturning(e);
+    visitChildren(e, arg);
+  }
+
+  @override
+  void visitUpdateStatement(UpdateStatement e, void arg) {
+    _handleReturning(e);
+    visitChildren(e, arg);
+  }
+
+  @override
+  void visitDeleteStatement(DeleteStatement e, void arg) {
+    _handleReturning(e);
+    visitChildren(e, arg);
   }
 }

@@ -6,22 +6,21 @@ environment:
   sdk: '>=2.6.0 <3.0.0'
 
 dependencies:
-  moor: ^3.2.0
-  built_value: ^7.1.0
+  drift: ^1.0.0
+  built_value: ^8.0.0
 
 dev_dependencies:
-  moor_generator: ^2.1.0
-  built_value_generator: ^7.1.0
-  build_runner: '^1.10.1'
+  drift_dev: ^1.0.0
+  built_value_generator: ^8.1.1
+  build_runner: ^2.0.0
 
 dependency_overrides:
-  moor:
-    path: ../../moor
-  moor_generator:
-    path: ../../moor_generator
+  drift:
+    path: ../../drift
+  drift_dev:
+    path: ../../drift_dev
   sqlparser:
     path: ../../sqlparser
 
-  # todo: Remove after built_value supports analyzer ^0.40
-  analyzer: 0.40.4
-  convert: ^3.0.0-nullsafety
+  # todo: Remove after https://github.com/google/built_value.dart/pull/1085 gets released
+  analyzer: ^2.0.0

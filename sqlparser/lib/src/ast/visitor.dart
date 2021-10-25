@@ -1,4 +1,4 @@
-part of 'ast.dart';
+import 'ast.dart';
 
 abstract class AstVisitor<A, R> {
   R visitSelectStatement(SelectStatement e, A arg);
@@ -15,8 +15,10 @@ abstract class AstVisitor<A, R> {
   R visitCreateViewStatement(CreateViewStatement e, A arg);
   R visitInvalidStatement(InvalidStatement e, A arg);
 
+  R visitReturning(Returning e, A arg);
   R visitWithClause(WithClause e, A arg);
   R visitUpsertClause(UpsertClause e, A arg);
+  R visitUpsertClauseEntry(UpsertClauseEntry e, A arg);
   R visitCommonTableExpression(CommonTableExpression e, A arg);
   R visitOrderBy(OrderBy e, A arg);
   R visitOrderingTerm(OrderingTerm e, A arg);
@@ -77,6 +79,7 @@ abstract class AstVisitor<A, R> {
   R visitTuple(Tuple e, A arg);
   R visitParentheses(Parentheses e, A arg);
   R visitInExpression(InExpression e, A arg);
+  R visitRaiseExpression(RaiseExpression e, A arg);
 
   R visitAggregateExpression(AggregateExpression e, A arg);
   R visitWindowDefinition(WindowDefinition e, A arg);
@@ -87,13 +90,10 @@ abstract class AstVisitor<A, R> {
   R visitNamedVariable(ColonNamedVariable e, A arg);
 
   R visitBlock(Block block, A arg);
+  R visitBeginTransaction(BeginTransactionStatement e, A arg);
+  R visitCommitStatement(CommitStatement e, A arg);
 
-  R visitMoorFile(MoorFile e, A arg);
-  R visitMoorImportStatement(ImportStatement e, A arg);
-  R visitMoorDeclaredStatement(DeclaredStatement e, A arg);
-  R visitMoorStatementParameter(StatementParameter e, A arg);
-  R visitMoorNestedStarResultColumn(NestedStarResultColumn e, A arg);
-  R visitDartPlaceholder(DartPlaceholder e, A arg);
+  R visitMoorSpecificNode(MoorSpecificNode e, A arg);
 }
 
 /// Visitor that walks down the entire tree, visiting all children in order.
@@ -202,8 +202,8 @@ class RecursiveVisitor<A, R> implements AstVisitor<A, R?> {
   }
 
   @override
-  R? visitMoorNestedStarResultColumn(NestedStarResultColumn e, A arg) {
-    return visitResultColumn(e, arg);
+  R? visitReturning(Returning e, A arg) {
+    return defaultNode(e, arg);
   }
 
   @override
@@ -213,6 +213,11 @@ class RecursiveVisitor<A, R> implements AstVisitor<A, R?> {
 
   @override
   R? visitUpsertClause(UpsertClause e, A arg) {
+    return defaultNode(e, arg);
+  }
+
+  @override
+  R? visitUpsertClauseEntry(UpsertClauseEntry e, A arg) {
     return defaultNode(e, arg);
   }
 
@@ -372,29 +377,18 @@ class RecursiveVisitor<A, R> implements AstVisitor<A, R?> {
     return defaultNode(e, arg);
   }
 
-  // Moor-specific additions
   @override
-  R? visitMoorFile(MoorFile e, A arg) {
-    return defaultNode(e, arg);
-  }
-
-  @override
-  R? visitMoorImportStatement(ImportStatement e, A arg) {
+  R? visitBeginTransaction(BeginTransactionStatement e, A arg) {
     return visitStatement(e, arg);
   }
 
   @override
-  R? visitMoorDeclaredStatement(DeclaredStatement e, A arg) {
+  R? visitCommitStatement(CommitStatement e, A arg) {
     return visitStatement(e, arg);
   }
 
   @override
-  R? visitDartPlaceholder(DartPlaceholder e, A arg) {
-    return defaultNode(e, arg);
-  }
-
-  @override
-  R? visitMoorStatementParameter(StatementParameter e, A arg) {
+  R? visitMoorSpecificNode(MoorSpecificNode e, A arg) {
     return defaultNode(e, arg);
   }
 
@@ -525,11 +519,16 @@ class RecursiveVisitor<A, R> implements AstVisitor<A, R?> {
 
   @override
   R? visitParentheses(Parentheses e, A arg) {
-    return e.expression.accept(this, arg);
+    return visitExpression(e, arg);
   }
 
   @override
   R? visitInExpression(InExpression e, A arg) {
+    return visitExpression(e, arg);
+  }
+
+  @override
+  R? visitRaiseExpression(RaiseExpression e, A arg) {
     return visitExpression(e, arg);
   }
 
@@ -584,9 +583,9 @@ extension VisitChildrenExtension<A, R> on AstVisitor<A, R?> {
   }
 
   /// Visits all [nodes] in sequence.
-  R? visitList(Iterable<AstNode?> nodes, A arg) {
+  R? visitList(Iterable<AstNode> nodes, A arg) {
     for (final node in nodes) {
-      node!.accept(this, arg);
+      node.accept(this, arg);
     }
     return null;
   }
@@ -621,18 +620,18 @@ extension TransformerUtils<A> on Transformer<A> {
     return transformed as T;
   }
 
-  void transformChildren(List<AstNode?> children, AstNode parent, A arg) {
-    final newChildren = <AstNode>[];
+  List<T> transformChildren<T extends AstNode>(
+      List<T> children, AstNode parent, A arg) {
+    final newChildren = <T>[];
 
     for (final child in children) {
-      final transformed = transform(child!, arg);
+      // ignore: unnecessary_cast, it's a frontend bug in Dart 2.12
+      final transformed = transform(child as AstNode, arg) as T?;
       if (transformed != null) {
         newChildren.add(transformed..parent = parent);
       }
     }
 
-    children
-      ..clear()
-      ..addAll(newChildren);
+    return newChildren;
   }
 }

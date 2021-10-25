@@ -1,4 +1,10 @@
-part of '../ast.dart';
+import 'package:sqlparser/sqlparser.dart';
+
+import '../../reader/tokenizer/token.dart';
+import '../ast.dart'; // todo: Remove this import
+import '../node.dart';
+import '../visitor.dart';
+import 'statement.dart';
 
 enum FailureMode {
   rollback,
@@ -17,21 +23,34 @@ const Map<TokenType, FailureMode> _tokensToMode = {
 };
 
 class UpdateStatement extends CrudStatement
-    implements StatementWithWhere, HasPrimarySource {
+    implements
+        StatementWithWhere,
+        HasPrimarySource,
+        HasFrom,
+        StatementReturningColumns {
   final FailureMode? or;
   @override
   TableReference table;
-  final List<SetComponent> set;
+  List<SetComponent> set;
+  @override
+  Queryable? from;
   @override
   Expression? where;
 
-  UpdateStatement(
-      {WithClause? withClause,
-      this.or,
-      required this.table,
-      required this.set,
-      this.where})
-      : super._(withClause);
+  @override
+  Returning? returning;
+  @override
+  ResultSet? returnedResultSet;
+
+  UpdateStatement({
+    WithClause? withClause,
+    this.or,
+    required this.table,
+    required this.set,
+    this.from,
+    this.where,
+    this.returning,
+  }) : super(withClause);
 
   @override
   R accept<A, R>(AstVisitor<A, R> visitor, A arg) {
@@ -42,8 +61,10 @@ class UpdateStatement extends CrudStatement
   void transformChildren<A>(Transformer<A> transformer, A arg) {
     withClause = transformer.transformNullableChild(withClause, this, arg);
     table = transformer.transformChild(table, this, arg);
-    transformer.transformChildren(set, this, arg);
+    set = transformer.transformChildren(set, this, arg);
+    from = transformer.transformNullableChild(from, this, arg);
     where = transformer.transformChild(where!, this, arg);
+    returning = transformer.transformNullableChild(returning, this, arg);
   }
 
   @override
@@ -51,7 +72,9 @@ class UpdateStatement extends CrudStatement
         if (withClause != null) withClause!,
         table,
         ...set,
+        if (from != null) from!,
         if (where != null) where!,
+        if (returning != null) returning!,
       ];
 
   static FailureMode? failureModeFromToken(TokenType token) {
